@@ -1,0 +1,43 @@
+name: CI — 코드 품질 검사
+
+on:
+  push:
+    branches: ["**"]          # 모든 브랜치 push 시
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    name: Lint & Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.10 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: 의존성 설치
+        run: |
+          pip install --upgrade pip
+          pip install ruff pyflakes
+
+      - name: Ruff 린트 검사
+        run: ruff check . --select=E,F,W --ignore=E501
+
+      - name: 미정의 변수 / import 오류 검사
+        run: pyflakes server/ rag/ retriever/ indexer/
+
+      - name: .env 파일 커밋 여부 검사 (보안)
+        run: |
+          if git ls-files | grep -E '^\.env$'; then
+            echo "🚨 .env 파일이 커밋에 포함되어 있습니다. 즉시 제거하세요."
+            exit 1
+          fi
+
+      - name: Docker 빌드 검증
+        run: docker build -t rag-api:ci-test .

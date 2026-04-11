@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>국민권익 지능형 가이드 AI</title>
+  <style>
+    /* ── 기본 리셋 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Sans KR", "Malgun Gothic", sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── 사이드바 ── */
+    #sidebar {
+      width: 260px;
+      min-width: 260px;
+      background: #1a2744;
+      color: #e8eaf6;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 16px;
+      gap: 16px;
+    }
+    #sidebar .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #2e3f6a;
+    }
+    #sidebar .logo span { font-size: 28px; }
+    #sidebar .logo h2 { font-size: 14px; font-weight: 700; line-height: 1.4; }
+    .sidebar-section { padding: 12px 0; border-bottom: 1px solid #2e3f6a; }
+    .sidebar-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #7986cb; margin-bottom: 10px; }
+    .status-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; padding: 4px 0;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #69f0ae; flex-shrink: 0; }
+    .dot.off { background: #ef5350; }
+    #btn-clear {
+      margin-top: auto;
+      background: #2e3f6a;
+      border: 1px solid #3d5296;
+      color: #e8eaf6;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background .2s;
+    }
+    #btn-clear:hover { background: #3d5296; }
+
+    /* ── 메인 영역 ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* 헤더 */
+    #header {
+      background: #fff;
+      border-bottom: 1px solid #dde3ee;
+      padding: 16px 28px;
+    }
+    #header h1 { font-size: 20px; font-weight: 700; color: #1a2744; }
+    #header p  { font-size: 13px; color: #6b7280; margin-top: 2px; }
+
+    /* 채팅 컨테이너 */
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    #chat-container::-webkit-scrollbar { width: 6px; }
+    #chat-container::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 3px; }
+
+    /* 웰컴 메시지 */
+    #welcome {
+      text-align: center;
+      color: #9e9e9e;
+      padding: 60px 0;
+    }
+    #welcome .welcome-icon { font-size: 48px; margin-bottom: 12px; }
+    #welcome h3 { font-size: 18px; color: #5c6bc0; margin-bottom: 8px; }
+    #welcome p  { font-size: 14px; }
+
+    /* 메시지 버블 */
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      animation: fadeIn .3s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform:none; } }
+    .msg-row.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+      background: #e8eaf6;
+    }
+    .msg-row.user .avatar { background: #5c6bc0; }
+
+    .bubble-wrap { max-width: 72%; display: flex; flex-direction: column; gap: 6px; }
+    .msg-row.user .bubble-wrap { align-items: flex-end; }
+
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      font-size: 14px;
+      line-height: 1.65;
+      word-break: break-word;
+    }
+    .msg-row.user  .bubble { background: #5c6bc0; color: #fff; border-bottom-right-radius: 4px; }
+    .msg-row.bot   .bubble { background: #fff; border: 1px solid #e0e4f0; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+
+    /* 카테고리 가이드 박스 */
+    .guide-box {
+      background: #e8f4fd;
+      border-left: 4px solid #5c6bc0;
+      border-radius: 0 8px 8px 0;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #1a3a5c;
+      line-height: 1.6;
+    }
+    .guide-box strong { color: #3949ab; }
+
+    /* 출처 드롭다운 */
+    .sources-toggle {
+      background: none; border: 1px solid #c5cae9;
+      border-radius: 6px; padding: 5px 12px;
+      font-size: 12px; color: #5c6bc0; cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: background .15s;
+      align-self: flex-start;
+    }
+    .sources-toggle:hover { background: #e8eaf6; }
+    .sources-list {
+      background: #f5f5fb;
+      border: 1px solid #e0e4f0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #374151;
+      display: none;
+    }
+    .sources-list.open { display: block; }
+    .sources-list li { list-style: none; padding: 3px 0; }
+    .sources-list li::before { content: "📄 "; }
+
+    /* 응답 시간 */
+    .meta { font-size: 11px; color: #9e9e9e; padding: 0 4px; }
+
+    /* 타이핑 커서 */
+    .cursor::after { content: "▌"; animation: blink .7s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* 스피너 */
+    .thinking {
+      display: flex; gap: 6px; align-items: center;
+      padding: 12px 16px; background: #fff;
+      border: 1px solid #e0e4f0; border-radius: 18px;
+      border-bottom-left-radius: 4px;
+    }
+    .thinking span {
+      width: 7px; height: 7px; border-radius: 50%; background: #9fa8da;
+      animation: bounce 1.2s ease-in-out infinite;
+    }
+    .thinking span:nth-child(2) { animation-delay: .2s; }
+    .thinking span:nth-child(3) { animation-delay: .4s; }
+    @keyframes bounce { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+
+    /* 오류 박스 */
+    .error-box {
+      background: #fdecea; border-left: 4px solid #ef5350;
+      border-radius: 0 8px 8px 0; padding: 10px 14px;
+      font-size: 13px; color: #c62828;
+    }
+
+    /* FIRAC 모드 접기/펼치기 스타일 */
+    .bubble details {
+      border: 1px solid #e0e4f0;
+      border-radius: 8px;
+      margin: 8px 0;
+      overflow: hidden;
+      background: #f8f9fc;
+    }
+    .bubble summary {
+      padding: 9px 14px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      color: #1a2744;
+      background: rgba(26,39,68,0.04);
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .bubble summary::-webkit-details-marker { display: none; }
+    .bubble summary::before {
+      content: "▶";
+      font-size: 9px;
+      opacity: 0.4;
+      transition: transform 0.2s;
+    }
+    .bubble details[open] summary::before { transform: rotate(90deg); }
+    .bubble details > *:not(summary) {
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+
+
+    /* 입력창 */
+    #input-area {
+      background: #fff;
+      border-top: 1px solid #dde3ee;
+      padding: 16px 28px;
+    }
+    #input-row {
+      display: flex; gap: 10px; align-items: flex-end;
+      max-width: 900px; margin: 0 auto;
+    }
+    #question {
+      flex: 1;
+      border: 1px solid #c5cae9;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+      max-height: 120px;
+      transition: border-color .2s;
+    }
+    #question:focus { border-color: #5c6bc0; }
+    #btn-send {
+      background: #5c6bc0; color: #fff;
+      border: none; border-radius: 12px;
+      width: 48px; height: 48px;
+      font-size: 20px; cursor: pointer;
+      flex-shrink: 0; transition: background .2s;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #btn-send:hover  { background: #3949ab; }
+    #btn-send:disabled { background: #c5cae9; cursor: not-allowed; }
+    #hint { font-size: 11px; color: #9e9e9e; text-align: center; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- 사이드바 -->
+<aside id="sidebar">
+  <div class="logo">
+    <span>🏛️</span>
+    <h2>국민권익위원회<br>지능형 안내 시스템</h2>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>System Status</h3>
+    <div class="status-item"><div class="dot" id="dot-main"></div><span id="status-main">확인 중...</span></div>
+    <div class="status-item"><div class="dot" id="dot-db"></div><span id="status-db">확인 중...</span></div>
+  </div>
+
+  <div class="sidebar-section">
+    <h3>안내 카테고리</h3>
+    <div style="font-size:12px;line-height:2;color:#c5cae9;">
+      📌 국민신문고<br>
+      ⚖️ 행정심판<br>
+      🌿 청렴포털<br>
+      📋 청탁금지법<br>
+      💬 일반 Q&A
+    </div>
+  </div>
+
+
+
+  <button id="btn-clear">🗑️ 대화 기록 초기화</button>
+</aside>
+
+<!-- 메인 -->
+<div id="main">
+  <div id="header">
+    <h1>🏛️ 국민권익 지능형 가이드 AI</h1>
+    <p>민원인의 어려움을 분석하여 최적의 구제 절차와 답변을 안내해 드립니다.</p>
+  </div>
+
+  <div id="chat-container">
+    <div id="welcome">
+      <div class="welcome-icon">🏛️</div>
+      <h3>무엇이든 질문하세요</h3>
+      <p>국민신문고, 행정심판, 청렴포털, 청탁금지법 등<br>권익 관련 모든 질문에 답변드립니다.</p>
+    </div>
+  </div>
+
+  <div id="input-area">
+    <div id="input-row">
+      <textarea id="question" rows="1"
+        placeholder="궁금하신 점이나 겪고 계신 어려움을 입력해 주세요 (Enter: 전송, Shift+Enter: 줄바꿈)"></textarea>
+      <button id="btn-send">➤</button>
+    </div>
+    <p id="hint">AI 답변은 참고용이며, 중요한 사안은 담당 기관에 직접 문의하시기 바랍니다.</p>
+  </div>
+</div>
+
+<script src="env-config.js"></script>
+<script>
+  // ── 설정 (env-config.js 참조) ─────────────────────────
+  const API_BASE = (window.ENV && window.ENV.API_BASE) !== undefined ? window.ENV.API_BASE : 'http://localhost:8000';
+
+  // ── DOM ──────────────────────────────────────────────
+  const chatEl   = document.getElementById('chat-container');
+  const welcome  = document.getElementById('welcome');
+  const textarea = document.getElementById('question');
+  const btnSend  = document.getElementById('btn-send');
+  const btnClear = document.getElementById('btn-clear');
+
+  // ── 히스토리 (sessionStorage) ─────────────────────────
+  let history = JSON.parse(sessionStorage.getItem('chat_history') || '[]');
+  let sessionId = sessionStorage.getItem('chat_session_id');
+  if (!sessionId) {
+    sessionId = 'sess_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    sessionStorage.setItem('chat_session_id', sessionId);
+  }
+
+  history.forEach(m => appendMessage(m.role, m));
+  if (history.length) welcome.style.display = 'none';
+
+  // ── 헬스체크 ─────────────────────────────────────────
+  async function checkHealth() {
+    try {
+      const r = await fetch(API_BASE + '/health');
+      const d = await r.json();
+      setStatus('main', true,  'LLM: ' + (d.llm || 'Active'));
+      setStatus('db',   true,  'Retriever: ' + (d.retriever || 'pgvector'));
+    } catch {
+      setStatus('main', false, 'API 서버 오프라인');
+      setStatus('db',   false, '연결 실패');
+    }
+  }
+  function setStatus(key, ok, text) {
+    document.getElementById('dot-' + key).className = 'dot' + (ok ? '' : ' off');
+    document.getElementById('status-' + key).textContent = text;
+  }
+  checkHealth();
+  setInterval(checkHealth, 30000);
+
+  // ── 전송 ─────────────────────────────────────────────
+  btnSend.addEventListener('click', sendMessage);
+  textarea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+  });
+
+  btnClear.addEventListener('click', () => {
+    history = [];
+    sessionStorage.removeItem('chat_history');
+    sessionId = 'sess_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    sessionStorage.setItem('chat_session_id', sessionId);
+    chatEl.innerHTML = '';
+    chatEl.appendChild(welcome);
+    welcome.style.display = '';
+  });
+
+  async function sendMessage() {
+    const q = textarea.value.trim();
+    if (!q || btnSend.disabled) return;
+
+    welcome.style.display = 'none';
+    textarea.value = '';
+    textarea.style.height = 'auto';
+    btnSend.disabled = true;
+
+    // 사용자 버블
+    const userMsg = { role: 'user', content: q };
+    history.push(userMsg);
+    appendMessage('user', userMsg);
+    saveHistory();
+
+    // 봇 버블 (스트리밍용 placeholder)
+    const botRow = createBotRow();
+    chatEl.appendChild(botRow);
+    scrollToBottom();
+
+    const thinkingEl = botRow.querySelector('.thinking');
+    const bubbleEl   = botRow.querySelector('.bubble');
+    const guideEl    = botRow.querySelector('.guide-box');
+    const sourcesBtn = botRow.querySelector('.sources-toggle');
+    const sourcesList= botRow.querySelector('.sources-list');
+    const metaEl     = botRow.querySelector('.meta');
+
+    let fullText = '';
+    let category = null, reason = null, sources = [];
+    const startTime = Date.now();
+
+    try {
+      const resp = await fetch(API_BASE + '/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, session_id: sessionId })
+      });
+
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const lines = buf.split('\n');
+        buf = lines.pop();   // 마지막 불완전한 줄은 버퍼에 보관
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+
+          let data;
+          try { data = JSON.parse(raw); } catch { continue; }
+
+          if (data.type === 'category') {
+            category = data.content;
+            reason   = data.reason;
+            let summaryHTML = '';
+            if (data.summary_5w1h && data.summary_5w1h.trim() !== '' && !data.summary_5w1h.includes('단순')) {
+               summaryHTML = `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #c5cae9; font-size:12px;">
+                                <strong>📝 AI 상황 분석 (육하원칙):</strong><br>
+                                <span style="color:#2a4365">${escHtml(data.summary_5w1h)}</span>
+                              </div>`;
+            }
+
+            thinkingEl.style.display = 'none';
+            guideEl.innerHTML = `💡 <strong>AI 프로세스 라우팅:</strong> 이 질의는 <strong>${escHtml(category)}</strong> 영역으로 분류되었습니다.<br><span style="color:#4a5568">${escHtml(reason)}</span>${summaryHTML}`;
+            guideEl.style.display = '';
+
+          } else if (data.type === 'docs') {
+            sources = data.sources || [];
+            if (sources.length) {
+              sourcesList.innerHTML = '<ul>' + sources.map(s => `<li>${s}</li>`).join('') + '</ul>';
+              sourcesBtn.style.display = '';
+            }
+
+          } else if (data.type === 'chunk') {
+            thinkingEl.style.display = 'none';
+            fullText += data.content;
+            bubbleEl.classList.add('cursor');
+            bubbleEl.innerHTML = markdownToHtml(fullText);
+
+          } else if (data.type === 'done') {
+            bubbleEl.classList.remove('cursor');
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            metaEl.textContent = `⏱️ 응답 시간: ${elapsed}초`;
+            metaEl.style.display = '';
+
+          } else if (data.type === 'error') {
+            thinkingEl.style.display = 'none';
+            bubbleEl.innerHTML = `<div class="error-box">⚠️ ${data.content}</div>`;
+          }
+          scrollToBottom();
+        }
+      }
+
+    } catch (err) {
+      thinkingEl.style.display = 'none';
+      bubbleEl.innerHTML = `<div class="error-box">⚠️ 연결 오류: ${err.message}</div>`;
+    }
+
+    // 히스토리 저장
+    const botMsg = { role: 'bot', content: fullText, category, reason, sources,
+                     elapsed: ((Date.now() - startTime) / 1000).toFixed(1) };
+    history.push(botMsg);
+    saveHistory();
+    btnSend.disabled = false;
+    textarea.focus();
+  }
+
+  // ── DOM 헬퍼 ─────────────────────────────────────────
+  function createBotRow() {
+    const row = document.createElement('div');
+    row.className = 'msg-row bot';
+    row.innerHTML = `
+      <div class="avatar">🤖</div>
+      <div class="bubble-wrap">
+        <div class="guide-box" style="display:none"></div>
+        <div class="bubble">
+          <div class="thinking"><span></span><span></span><span></span></div>
+        </div>
+        <button class="sources-toggle" style="display:none">📚 답변 근거 보기 ▾</button>
+        <div class="sources-list"></div>
+        <div class="meta" style="display:none"></div>
+      </div>`;
+    row.querySelector('.sources-toggle').addEventListener('click', function () {
+      const list = row.querySelector('.sources-list');
+      list.classList.toggle('open');
+      this.textContent = list.classList.contains('open') ? '📚 답변 근거 숨기기 ▴' : '📚 답변 근거 보기 ▾';
+    });
+    return row;
+  }
+
+  function appendMessage(role, msg) {
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + role;
+
+    if (role === 'user') {
+      row.innerHTML = `
+        <div class="avatar" style="background:#5c6bc0;color:#fff">👤</div>
+        <div class="bubble-wrap">
+          <div class="bubble">${escHtml(msg.content)}</div>
+        </div>`;
+    } else {
+      let guideHtml = '';
+      if (msg.category) {
+        guideHtml = `<div class="guide-box">💡 <strong>AI 가이드 추천:</strong> 이 질의는 <strong>[${escHtml(msg.category)}]</strong> 절차에 해당합니다.<br><span style="color:#4a5568">${escHtml(msg.reason||'')}</span></div>`;
+      }
+      let sourcesHtml = '';
+      if (msg.sources && msg.sources.length) {
+        const items = msg.sources.map(s => `<li>${escHtml(s)}</li>`).join('');
+        sourcesHtml = `
+          <button class="sources-toggle" onclick="toggleSources(this)">📚 답변 근거 보기 ▾</button>
+          <div class="sources-list"><ul>${items}</ul></div>`;
+      }
+      row.innerHTML = `
+        <div class="avatar">🤖</div>
+        <div class="bubble-wrap">
+          ${guideHtml}
+          <div class="bubble">${markdownToHtml(msg.content)}</div>
+          ${sourcesHtml}
+          ${msg.elapsed ? `<div class="meta">⏱️ 응답 시간: ${msg.elapsed}초</div>` : ''}
+        </div>`;
+    }
+    chatEl.appendChild(row);
+  }
+
+  function toggleSources(btn) {
+    const list = btn.nextElementSibling;
+    list.classList.toggle('open');
+    btn.textContent = list.classList.contains('open') ? '📚 답변 근거 숨기기 ▴' : '📚 답변 근거 보기 ▾';
+  }
+
+  function scrollToBottom() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function saveHistory() {
+    // 최근 50개만 저장
+    if (history.length > 50) history = history.slice(-50);
+    sessionStorage.setItem('chat_history', JSON.stringify(history));
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── 마크다운 + FIRAC HTML 태그 통합 렌더러 ────────────────────────────
+  // 허용된 HTML 태그(<details>, <summary>, <strong>, <em> 등)는 그대로 렌더링하고
+  // 사용자 입력은 이스케이프 처리합니다.
+  const ALLOWED_TAGS = ['details', 'summary', 'strong', 'em', 'br', 'code', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote'];
+
+  function markdownToHtml(text) {
+    // 1단계: 허용 HTML 태그를 플레이스홀더로 치환 (이스케이프 방지)
+    const preserved = [];
+    let safe = text.replace(/<([/]?)(details|summary|strong|em|br|code|ul|ol|li|h[1-4]|blockquote)([^>]*)>/gi, (match) => {
+      const idx = preserved.length;
+      preserved.push(match);
+      return `\x00HTML_${idx}\x00`;
+    });
+
+    // 2단계: 나머지 텍스트 이스케이프 (사용자 입력 보호)
+    safe = safe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    // 3단계: 마크다운 변환
+    safe = safe
+      // 헤딩 (### ## #)
+      .replace(/^### (.+)$/gm, '<h4 style="margin:12px 0 6px;color:#1a2744;font-size:0.95em">$1</h4>')
+      .replace(/^## (.+)$/gm,  '<h3 style="margin:14px 0 6px;color:#1a2744;font-size:1em">$1</h3>')
+      .replace(/^# (.+)$/gm,   '<h2 style="margin:16px 0 8px;color:#1a2744;font-size:1.05em">$1</h2>')
+      // 굵게, 기울임, 인라인 코드
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,     '<em>$1</em>')
+      .replace(/`(.+?)`/g,       '<code style="background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:0.88em">$1</code>')
+      // 인용구
+      .replace(/^&gt; (.+)$/gm,  '<blockquote style="border-left:3px solid #c9a84c;padding:4px 12px;margin:8px 0;color:#555">$1</blockquote>')
+      // 글머리 기호 목록 (- 또는 *)
+      .replace(/^[-*] (.+)$/gm,  '<li>$1</li>')
+      // li 연속 그룹을 ul로 감싸기
+      .replace(/(<li>.+<\/li>\n?)+/g, m => `<ul style="padding-left:20px;margin:6px 0">${m}</ul>`)
+      // 줄바꿈
+      .replace(/\n/g, '<br>');
+
+    // 4단계: 플레이스홀더를 원래 HTML 태그로 복원
+    safe = safe.replace(/\x00HTML_(\d+)\x00/g, (_, i) => preserved[parseInt(i)]);
+
+    return safe;
+  }
+
+</script>
+</body>
+</html>

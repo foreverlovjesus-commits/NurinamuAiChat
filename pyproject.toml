@@ -1,0 +1,12 @@
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 클라우드/레거시 파일 — 운영 대상 아님
+"server/api_server_cloud.py" = ["E402", "E722", "E701"]
+"web/chat_ui_cloud.py"       = ["E701"]
+"web/chat_ui.py"             = ["E701"]
+"scripts/*.py"               = ["E722", "E701"]
+# 구버전 인덱서 — v4가 운영본
+"indexer/rag_indexer_v3.py"  = ["E722", "E701"]

@@ -1,0 +1,85 @@
+name: CD — 운영 배포
+
+on:
+  push:
+    branches: [main]   # main 브랜치 머지 시에만 배포
+
+jobs:
+  build-and-push:
+    name: Docker 이미지 빌드 & 레지스트리 푸시
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Docker Hub 로그인
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 이미지 빌드 & 푸시
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/rag-api:latest
+            ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
+
+  deploy-staging:
+    name: 스테이징 서버 배포
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 스테이징 서버 SSH 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/rag-chatbot
+            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:latest
+            docker-compose up -d --no-deps api
+            sleep 10
+            curl -f http://localhost:8000/health || exit 1
+            echo "✅ 스테이징 배포 완료"
+
+  deploy-production:
+    name: 운영 서버 배포 (무중단 Rolling)
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production        # GitHub에서 수동 승인 필요
+      url: https://www.acrc.go.kr/chatbot
+
+    steps:
+      - name: 운영 서버 #1 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST_1 }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/rag-chatbot
+            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
+            docker-compose up -d --no-deps api
+            sleep 15
+            curl -f http://localhost:8000/health || exit 1
+
+      - name: 운영 서버 #2 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST_2 }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /opt/rag-chatbot
+            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
+            docker-compose up -d --no-deps api
+            sleep 15
+            curl -f http://localhost:8000/health || exit 1
+            echo "✅ 운영 배포 완료 — SHA: ${{ github.sha }}"
