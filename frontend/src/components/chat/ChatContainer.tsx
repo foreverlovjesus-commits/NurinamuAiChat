@@ -6,26 +6,53 @@ import Sidebar from './Sidebar';
 import PerformanceWidget from './PerformanceWidget';
 import ExportButton from './ExportButton';
 import { ChatMessage, SSEEvent } from '@/types/api';
-import { askStream, getHealth, getSessionHistory } from '@/api/client';
+import { askStream, getHealth, getSessionHistory, getUIConfig } from '@/api/client';
 import { LayoutDashboard, Share2, ShieldCheck, FileText, Zap } from 'lucide-react';
 
 const ChatContainer: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [currentCategory, setCurrentCategory] = useState<string>('');
   const [refreshStats, setRefreshStats] = useState(0);
+  const [uiConfig, setUiConfig] = useState({ 
+    hide_session_list: false,
+    hide_usage_stats: false,
+    hide_secure_icon: false,
+    hide_pdf_export: false,
+    hide_share_icon: false,
+    enable_conversation_history: false,
+    app_name: "누리나무 AI 법률통합지원 시스템",
+    app_bot_name: "누리나무 법률 AI",
+    app_icon: "⚖️"
+  });
+  // 설정 로드 완료 여부 ─ true가 되기 전까지 사이드바를 렌더링 안 한(FOUC 방지)
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    document.title = `${uiConfig.app_name} | 국민권익위원회`;
+  }, [uiConfig.app_name]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 세션 초기화
+  // 세션 초기화 ─ 관리자 설정(enable_conversation_history)에 따라 동적 제어
   useEffect(() => {
-    let sid = localStorage.getItem('nurinamu_session_id');
-    if (!sid) {
-      sid = crypto.randomUUID();
-      localStorage.setItem('nurinamu_session_id', sid);
-    }
-    setSessionId(sid);
-    loadHistory(sid);
+    getUIConfig().then(config => {
+      setUiConfig(config);
+      setIsConfigLoaded(true);  // 설정 로드 완료 신호
+      if (config.enable_conversation_history) {
+        let sid = localStorage.getItem('nurinamu_session_id');
+        if (!sid) {
+          sid = crypto.randomUUID();
+          localStorage.setItem('nurinamu_session_id', sid);
+        }
+        setSessionId(sid);
+        loadHistory(sid);
+      } else {
+        const sid = crypto.randomUUID();
+        setSessionId(sid);
+      }
+    }).catch(() => setIsConfigLoaded(true));  // 실패시도 렌더링 허용
     getHealth().catch(err => console.error('백엔드 상태 확인 실패:', err));
   }, []);
 
@@ -49,13 +76,16 @@ const ChatContainer: React.FC = () => {
     }
   };
 
-  const handleSelectSession = (sid: string | null) => {
-    const nextSid = sid || crypto.randomUUID();
-    setSessionId(nextSid);
-    localStorage.setItem('nurinamu_session_id', nextSid);
-    if (sid) {
-      loadHistory(nextSid);
+  const handleSelectSession = (_sid: string | null) => {
+    if (uiConfig.enable_conversation_history && _sid) {
+      // 이력 연계 모드: 해당 세션 복원
+      localStorage.setItem('nurinamu_session_id', _sid);
+      setSessionId(_sid);
+      loadHistory(_sid);
     } else {
+      // 독립 모드: 항상 새 세션으로 초기화
+      const nextSid = crypto.randomUUID();
+      setSessionId(nextSid);
       setMessages([]);
       setRefreshStats(0);
     }
@@ -100,6 +130,11 @@ const ChatContainer: React.FC = () => {
             fullContent += event.content || '';
             updateLastMessage({ content: fullContent });
             break;
+          case 'reset':
+            // 재시도 시 부분 답변 초기화 → 새 답변이 깔끔하게 시작됨
+            fullContent = '';
+            updateLastMessage({ content: '' });
+            break;
           case 'done':
             setIsLoading(false);
             setRefreshStats(prev => prev + 1);
@@ -137,21 +172,32 @@ const ChatContainer: React.FC = () => {
 
   return (
     <div className="flex h-screen" style={{ background: 'var(--surface-1)' }}>
-      {/* 사이드바 */}
-      <Sidebar
-        currentSessionId={sessionId}
-        onSelectSession={handleSelectSession}
-      />
+      {/* 
+        사이드바: 설정 로드 전(isConfigLoaded=false)에는 알 렌더링 안 함 → FOUC(짧은 번쉽임) 방지
+        모바일 기기(md 미만)에서는 무조건 숨김,
+        hide_session_list=true 시에도 렌더링 제외.
+      */}
+      {isConfigLoaded && !uiConfig.hide_session_list && (
+        <div className="hidden md:flex flex-col h-full">
+          <Sidebar
+            currentSessionId={sessionId}
+            onSelectSession={handleSelectSession}
+            appName={uiConfig.app_name}
+          />
+        </div>
+      )}
 
       {/* 메인 채팅 영역 */}
       <div className="flex-1 flex flex-col h-full relative overflow-hidden" style={{ background: 'var(--surface-0)' }}>
 
         {/* 성능 분석 위젯 */}
-        <PerformanceWidget sessionId={sessionId} refreshTrigger={refreshStats} />
+        {!uiConfig.hide_usage_stats && (
+          <PerformanceWidget sessionId={sessionId} refreshTrigger={refreshStats} />
+        )}
 
         {/* 상단 헤더 */}
         <header
-          className="flex-shrink-0 flex items-center justify-between px-6 py-3"
+          className="flex-shrink-0 flex items-center justify-between px-3 md:px-6 py-3"
           style={{
             background: 'rgba(255,255,255,0.95)',
             backdropFilter: 'blur(12px)',
@@ -162,11 +208,17 @@ const ChatContainer: React.FC = () => {
           <div className="flex items-center gap-3">
             {/* 시스템 로고/아이콘 */}
             <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center"
-              style={{ background: 'var(--gov-navy)' }}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center ${uiConfig.app_logo_path ? 'overflow-hidden' : ''}`}
+              style={{ background: uiConfig.app_logo_path ? 'transparent' : 'var(--gov-navy)' }}
               aria-hidden="true"
             >
-              <FileText size={16} color="var(--gov-gold)" strokeWidth={2.5} />
+              {uiConfig.app_logo_path ? (
+                <img src={uiConfig.app_logo_path} alt="App Logo" className="w-full h-full object-cover" />
+              ) : (
+                <span style={{ fontSize: '18px' }}>
+                  {uiConfig.app_icon}
+                </span>
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -174,7 +226,7 @@ const ChatContainer: React.FC = () => {
                   className="text-sm font-bold leading-tight"
                   style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-main)' }}
                 >
-                  누리나무 AI 법률통합지원 시스템
+                  {uiConfig.app_name}
                 </h1>
                 {currentCategory && (
                   <span
@@ -202,6 +254,7 @@ const ChatContainer: React.FC = () => {
 
           <div className="flex items-center gap-2">
             {/* 보안 연결 상태 */}
+            {!uiConfig.hide_secure_icon && (
             <div
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
               style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
@@ -212,7 +265,11 @@ const ChatContainer: React.FC = () => {
                 보안 연결
               </span>
             </div>
-            <ExportButton messages={messages} sessionId={sessionId} />
+            )}
+            {!uiConfig.hide_pdf_export && (
+              <ExportButton messages={messages} sessionId={sessionId} />
+            )}
+            {!uiConfig.hide_share_icon && (
             <button
               className="p-2 rounded-lg transition-colors"
               style={{ border: '1px solid var(--surface-3)', color: 'var(--text-muted)' }}
@@ -223,13 +280,14 @@ const ChatContainer: React.FC = () => {
             >
               <Share2 size={15} />
             </button>
+            )}
           </div>
         </header>
 
         {/* 메시지 영역 */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto px-6 py-6 scroll-smooth"
+          className="flex-1 overflow-y-auto px-3 md:px-6 py-6 scroll-smooth"
           role="log"
           aria-label="대화 내용"
           aria-live="polite"
@@ -340,8 +398,11 @@ const ChatContainer: React.FC = () => {
             <ChatBubble
               key={`${sessionId}-${idx}`}
               message={msg}
+              previousMessage={idx > 0 && messages[idx - 1].role === 'user' ? messages[idx - 1] : undefined}
               sessionId={sessionId}
               index={idx}
+              appBotName={uiConfig.app_bot_name}
+              appName={uiConfig.app_name}
             />
           ))}
 
@@ -382,7 +443,7 @@ const ChatContainer: React.FC = () => {
 
         {/* 입력 영역 */}
         <footer
-          className="flex-shrink-0 px-6 py-4"
+          className="flex-shrink-0 px-3 md:px-6 py-4"
           style={{
             background: 'linear-gradient(to top, var(--surface-0) 80%, transparent)',
           }}
@@ -403,7 +464,7 @@ const ChatContainer: React.FC = () => {
               </span>
               <span style={{ color: 'var(--surface-3)' }}>|</span>
               <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-                누리나무 AI v4.1 · 국민권익위원회
+                {uiConfig.app_name} · 국민권익위원회
               </span>
               <span style={{ color: 'var(--surface-3)' }}>|</span>
               <span className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>

@@ -3,6 +3,6 @@
 
 window.ENV = {
   // 백엔드 API 서버 주소 
-  // (개발 시 http://localhost:8000, 상용 리버스 프록시 시 '' 또는 실제 도메인 입력)
-  API_BASE: "http://localhost:8000"
+  // 시스템 시작 전 env 변수를 통해 주입됨, 혹은 리버스 프록시 시 '' 사용
+  API_BASE: ""
 };

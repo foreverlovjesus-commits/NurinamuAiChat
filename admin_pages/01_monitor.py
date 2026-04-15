@@ -197,7 +197,7 @@ with st.expander("메타데이터 태깅 설정", expanded=False):
                     st.success(f"OpenAI ({model_name}) 연결 성공 (사용 토큰: {tokens})")
                 else:
                     import requests
-                    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                    ollama_url = os.getenv("OLLAMA_BASE_URL")
                     resp = requests.get(f"{ollama_url.rstrip('/')}/api/tags", timeout=5)
                     if resp.status_code == 200:
                         models = [m["name"] for m in resp.json().get("models", [])]

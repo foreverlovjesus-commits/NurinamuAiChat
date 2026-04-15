@@ -10,7 +10,8 @@ services:
       - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
       - CHAT_API_KEY=${CHAT_API_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - MAIN_LLM_MODEL=${MAIN_LLM_MODEL:-gemini}
     volumes:
       - ./logs:/app/logs
     depends_on:

@@ -53,7 +53,8 @@ with st.form("global_config_form"):
         "local":     "구축형 로컬 AI (Ollama)",
         "openai":    "OpenAI (모델명은 하단에서 직접 설정)",
         "gemini":    "Google Gemini (모델명은 하단에서 직접 설정)",
-        "anthropic": "Anthropic Claude (모델명은 하단에서 직접 설정)"
+        "anthropic": "Anthropic Claude (모델명은 하단에서 직접 설정)",
+        "vertex":    "Google Cloud Vertex AI (엔터프라이즈)"
     }
     # LLM_PROVIDER (레거시) / GLOBAL_LLM_PROVIDER 양쪽 모두 확인
     current_llm = os.getenv("GLOBAL_LLM_PROVIDER", os.getenv("LLM_PROVIDER", "local"))
@@ -100,6 +101,20 @@ with st.form("global_config_form"):
     current_enable_expansion = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() == "true"
     enable_expansion = st.checkbox("검색 전 쿼리 의미 확장(Query Expansion) 활성화 (체크 해제 시 속도 대폭 향상)", value=current_enable_expansion)
 
+    current_enable_metadata = os.getenv("ENABLE_METADATA_TAGGING", "true").lower() == "true"
+    enable_metadata = st.checkbox("사전 메타데이터 태깅 활성화 (RAG 필터 목적이므로 순수 LLM 모드에서는 반드시 체크 해제)", value=current_enable_metadata)
+
+    st.markdown("---")
+    st.markdown("##### 💬 대화 이력 연계 설정")
+    current_conv_history = os.getenv("ENABLE_CONVERSATION_HISTORY", "false").lower() == "true"
+    enable_conv_history = st.checkbox(
+        "이전 대화 이력 연계 허용 (체크 시 앞선 질문을 LLM에 함께 전송)",
+        value=current_conv_history,
+        help="체크 해제(권장) 시 각 질문을 완전히 독립적으로 처리하여 토큰 비용을 대폭 절감할 수 있습니다. 화면을 닫으면 세션도 자동 초기화됩니다."
+    )
+    if enable_conv_history:
+        st.warning("⚠️ 이력 연계 시 대화가 길어질수록 매 질문마다 누적 토큰이 과금됩니다.")
+
     submitted_config = st.form_submit_button("전역 설정 저장")
     if submitted_config:
         if not os.path.exists(ENV_PATH):
@@ -118,9 +133,85 @@ with st.form("global_config_form"):
             
         safe_set_key(ENV_PATH, "ENABLE_ELIGIBILITY_CHECK", "true" if enable_eligibility else "false")
         safe_set_key(ENV_PATH, "ENABLE_QUERY_EXPANSION", "true" if enable_expansion else "false")
+        safe_set_key(ENV_PATH, "ENABLE_METADATA_TAGGING", "true" if enable_metadata else "false")
+        safe_set_key(ENV_PATH, "ENABLE_CONVERSATION_HISTORY", "true" if enable_conv_history else "false")
         
         st.success("전역 시스템 작동 설정이 성공적으로 저장되었습니다.")
         load_dotenv(ENV_PATH, override=True)  # 즉시 환경변수 갱신
+
+st.markdown("---")
+st.markdown("### 💡 클라이언트 UI / UX 통제")
+st.info("이곳에서 클라이언트 측(Front-End)에 노출되는 특정 패널과 기능들을 동적으로 숨길 수 있습니다.")
+
+with st.form("ui_ux_config_form"):
+    ccol1, ccol2 = st.columns(2)
+    with ccol1:
+        current_hide_session_list = os.getenv("HIDE_SESSION_LIST", "false").lower() == "true"
+        hide_session_list = st.checkbox("대화 목록 사이드바 숨기기 (모바일은 자동숨김 됨)", value=current_hide_session_list, help="과거 대화 내역 목록을 좌측 메뉴에서 제거합니다.")
+        current_hide_usage_stats = os.getenv("HIDE_USAGE_STATS", "false").lower() == "true"
+        hide_usage_stats = st.checkbox("상단 사용량 통계 위젯 숨기기", value=current_hide_usage_stats)
+        current_hide_pdf_export = os.getenv("HIDE_PDF_EXPORT", "false").lower() == "true"
+        hide_pdf_export = st.checkbox("PDF 내보내기 버튼 숨기기", value=current_hide_pdf_export)
+    
+    with ccol2:
+        current_hide_compare_tab = os.getenv("HIDE_COMPARE_TAB", "false").lower() == "true"
+        hide_compare_tab = st.checkbox("문서 비교 네비게이션 탭 숨기기", value=current_hide_compare_tab, help="좌측 가장자리 네비게이션에서 '문서 비교' 등 AI 상담 이외의 기능을 숨깁니다.")
+        current_hide_secure_icon = os.getenv("HIDE_SECURE_ICON", "false").lower() == "true"
+        hide_secure_icon = st.checkbox("보안 연결 아이콘 숨기기", value=current_hide_secure_icon)
+        current_hide_share_icon = os.getenv("HIDE_SHARE_ICON", "false").lower() == "true"
+        hide_share_icon = st.checkbox("공유 아이콘 숨기기", value=current_hide_share_icon)
+        
+    submitted_ui_config = st.form_submit_button("UI 화면 설정 업데이트")
+    if submitted_ui_config:
+        safe_set_key(ENV_PATH, "HIDE_SESSION_LIST", "true" if hide_session_list else "false")
+        safe_set_key(ENV_PATH, "HIDE_COMPARE_TAB", "true" if hide_compare_tab else "false")
+        safe_set_key(ENV_PATH, "HIDE_USAGE_STATS", "true" if hide_usage_stats else "false")
+        safe_set_key(ENV_PATH, "HIDE_SECURE_ICON", "true" if hide_secure_icon else "false")
+        safe_set_key(ENV_PATH, "HIDE_PDF_EXPORT", "true" if hide_pdf_export else "false")
+        safe_set_key(ENV_PATH, "HIDE_SHARE_ICON", "true" if hide_share_icon else "false")
+        st.success("UI 상태 제어 설정이 .env에 성공적으로 저장되었습니다. 브라우저 새로고침 시 화면에 즉각 반영됩니다.")
+        load_dotenv(ENV_PATH, override=True)
+
+st.markdown("---")
+st.markdown("### 🏷️ 서비스 브랜딩 (고객 제공 화면 명칭 변경)")
+st.info("기관 또는 팀에 맞게 서비스 명칭과 로고, 챗봇 이름을 자유롭게 설정할 수 있습니다.")
+with st.form("branding_config_form"):
+    b_col1, b_col2, b_col3 = st.columns(3)
+    with b_col1:
+        app_name = st.text_input("서비스 명칭 (상단 헤더 등)", value=os.getenv("APP_NAME", "누리나무 AI 법률통합지원 시스템"))
+    with b_col2:
+        app_bot_name = st.text_input("AI 챗봇 비서 이름 (채팅 말풍선 등)", value=os.getenv("APP_BOT_NAME", "누리나무 법률 AI"))
+    with b_col3:
+        app_icon = st.text_input("대표 아이콘 (이모지)", value=os.getenv("APP_ICON", "⚖️"), help="커스텀 이미지를 비활성화하면 사용됩니다.")
+
+    st.markdown("##### 커스텀 이미지 아이콘")
+    use_custom_logo = st.checkbox("문자(이모지) 대신 커스텀 업로드 이미지 활성화", value=bool(os.getenv("APP_LOGO_PATH")))
+    app_icon_file = st.file_uploader("새 커스텀 아이콘 이미지 업로드 (업로드 시 기존 이미지를 덮어씁니다)", type=['png', 'jpg', 'jpeg', 'svg', 'webp'])
+        
+    submitted_branding = st.form_submit_button("브랜딩 설정 업데이트")
+    if submitted_branding:
+        safe_set_key(ENV_PATH, "APP_NAME", app_name)
+        safe_set_key(ENV_PATH, "APP_BOT_NAME", app_bot_name)
+        safe_set_key(ENV_PATH, "APP_ICON", app_icon)
+        
+        if use_custom_logo:
+            if app_icon_file is not None:
+                static_dir = os.path.join(BASE_DIR, "static")
+                os.makedirs(static_dir, exist_ok=True)
+                ext = app_icon_file.name.split('.')[-1].lower()
+                filename = f"custom_icon.{ext}"
+                filepath = os.path.join(static_dir, filename)
+                with open(filepath, "wb") as f:
+                    f.write(app_icon_file.getbuffer())
+                safe_set_key(ENV_PATH, "APP_LOGO_PATH", f"/{filename}")
+            elif not os.getenv("APP_LOGO_PATH"):
+                # 활성화했지만 파일이 없고 기존 경로도 없다면 무시
+                safe_set_key(ENV_PATH, "APP_LOGO_PATH", "")
+        else:
+            safe_set_key(ENV_PATH, "APP_LOGO_PATH", "")
+            
+        st.success("브랜딩 시스템 명칭 및 아이콘이 성공적으로 저장되었습니다. 브라우저 새로고침 시 즉각 반영됩니다.")
+        load_dotenv(ENV_PATH, override=True)
 
 st.markdown("---")
 st.markdown("### 📈 문서 유형별 검색 가중치 (우선순위 역학 조절)")
@@ -152,14 +243,20 @@ st.markdown("### 🌐 외부 연동 및 네트워크(CORS) 설정")
 st.info("프론트엔드 통신 허용 범위와 법제처 법령 검색 등 외부 모듈(MCP) 서버 주소를 설정합니다.")
 
 with st.form("network_config_form"):
-    mcp_url_val = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+    mcp_url_val = os.getenv("MCP_SERVER_URL", "")
     mcp_server_url = st.text_input("MCP 외부 서버 URL (법제처 검색 전용)", value=mcp_url_val, help="연동된 법제처 MCP 백엔드 서버의 주소입니다.")
+    
+    ollama_url_val = os.getenv("OLLAMA_BASE_URL", "")
+    ollama_base_url = st.text_input("로컬 AI (Ollama) 서버 URL (OLLAMA_BASE_URL)", value=ollama_url_val, help="Ollama 컨테이너 또는 외부 서버의 주소입니다. (.env 속 OLLAMA_BASE_URL)")
+    
+    frontend_api_val = os.getenv("NEXT_PUBLIC_API_BASE_URL", "")
+    next_public_api = st.text_input("프론트엔드 API 통신 URL (NEXT_PUBLIC_API_BASE_URL)", value=frontend_api_val, help="프론트엔드 웹 화면이 백엔드를 호출할 때 사용하는 베이스 주소입니다.")
     
     api_key_val = os.getenv("API_KEY", "")
     system_api_key = st.text_input("시스템 보안 통신 키 (API_KEY)", value=api_key_val, type="password", help="MCP 서버 연동 및 /ask 엔드포인트 인증 등에 사용되는 자체 보안 키입니다.")
     
-    cors_val = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8501")
-    allowed_origins = st.text_input("허용할 프론트엔드 출처 표시 (ALLOWED_ORIGINS)", value=cors_val, help="웹 화면 구동 허용 목록입니다 (띄어쓰기 없이 쉼표로 구분)")
+    cors_val = os.getenv("ALLOWED_ORIGINS", "")
+    allowed_origins = st.text_input("허용할 프론트엔드 출처 표시 (ALLOWED_ORIGINS)", value=cors_val, help="CORS(해킹 차단 허용 범위) 웹 화면 구동 허용 목록입니다 (띄어쓰기 없이 쉼표로 구분)")
     
     doc_archive_val = os.getenv("DOC_ARCHIVE_DIR", "doc_archive")
     doc_archive_dir = st.text_input("임베딩 파일 기본 업로드 폴더명 (DOC_ARCHIVE_DIR)", value=doc_archive_val, help="업로드된 파일들이 저장되는 경로입니다. (기본값: doc_archive)")
@@ -173,7 +270,9 @@ with st.form("network_config_form"):
         safe_set_key(ENV_PATH, "API_KEY", system_api_key.strip())
         safe_set_key(ENV_PATH, "ALLOWED_ORIGINS", allowed_origins.strip())
         safe_set_key(ENV_PATH, "DOC_ARCHIVE_DIR", doc_archive_dir.strip())
-        st.success("네트워크 설정(CORS, 스토리지)이 성공적으로 저장되었습니다.")
+        safe_set_key(ENV_PATH, "OLLAMA_BASE_URL", ollama_base_url.strip())
+        safe_set_key(ENV_PATH, "NEXT_PUBLIC_API_BASE_URL", next_public_api.strip())
+        st.success("네트워크 설정 주소들이 성공적으로 저장되었습니다.")
         load_dotenv(ENV_PATH, override=True)
 
 st.markdown("---")
@@ -185,15 +284,34 @@ with st.form("api_key_form"):
     google_key = st.text_input("Google AI Studio API Key (gemini-2.5-flash 등)", value=os.getenv("GOOGLE_API_KEY", ""), type="password")
     anthropic_key = st.text_input("Anthropic API Key (claude-3-5-sonnet 등)", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
     
+    st.markdown("---")
+    st.markdown("##### ☁️ Vertex AI (GCP) 엔터프라이즈 모드 인증 정보")
+    gcp_project = st.text_input("GCP Project ID 명", value=os.getenv("GCP_PROJECT_ID", ""))
+    gcp_location = st.text_input("GCP Location (기본값: asia-northeast3)", value=os.getenv("GCP_LOCATION", "asia-northeast3"))
+    gcp_json_file = st.file_uploader("GCP 서비스 계정 Key (JSON) 업로드", type=['json'], help="업로드 시 서버의 config 폴더 내부에 안전하게 임시 적용됩니다.")
+    
     submitted = st.form_submit_button("설정 저장")
     if submitted:
         if not os.path.exists(ENV_PATH):
             with open(ENV_PATH, "w") as f:
                 f.write("\n")
-        safe_set_key(ENV_PATH, "OPENAI_API_KEY", openai_key)
-        safe_set_key(ENV_PATH, "GOOGLE_API_KEY", google_key)
-        safe_set_key(ENV_PATH, "ANTHROPIC_API_KEY", anthropic_key)
-        st.success("API 키가 `.env` 파일에 성공적으로 저장되었습니다.")
+        safe_set_key(ENV_PATH, "OPENAI_API_KEY", openai_key.strip())
+        safe_set_key(ENV_PATH, "GOOGLE_API_KEY", google_key.strip())
+        safe_set_key(ENV_PATH, "ANTHROPIC_API_KEY", anthropic_key.strip())
+        
+        safe_set_key(ENV_PATH, "GCP_PROJECT_ID", gcp_project.strip())
+        safe_set_key(ENV_PATH, "GCP_LOCATION", gcp_location.strip())
+        
+        if gcp_json_file is not None:
+            config_dir = os.path.join(BASE_DIR, "config")
+            os.makedirs(config_dir, exist_ok=True)
+            filepath = os.path.join(config_dir, "gcp_credentials.json")
+            with open(filepath, "wb") as f:
+                f.write(gcp_json_file.getbuffer())
+            safe_set_key(ENV_PATH, "GOOGLE_APPLICATION_CREDENTIALS", filepath)
+            
+        st.success("API 키 및 GCP 계정 설정이 `.env` 파일에 성공적으로 저장되었습니다.")
+        load_dotenv(ENV_PATH, override=True)
 
 st.markdown("---")
 st.markdown("### LLM 모델명 직접 설정 (상용 및 로컬)")
@@ -270,6 +388,14 @@ if st.button("현재 LLM 제공자 API 연결 및 모델 테스트", use_contain
                 llm_m.invoke("test")
                 st.success(f"✅ Gemini 통신 정상! (라우터: {r_model}, 메인: {m_model})")
 
+            elif provider == "vertex":
+                from langchain_google_vertexai import ChatVertexAI
+                r_model = os.getenv("GEMINI_ROUTER_MODEL", "gemini-1.5-flash")
+                m_model = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+                llm_r = ChatVertexAI(project=os.getenv("GCP_PROJECT_ID"), location=os.getenv("GCP_LOCATION"), model=r_model, temperature=0)
+                llm_r.invoke("test")
+                st.success(f"✅ Vertex AI 연결 성공! (라우터: {r_model}, 프로젝트: {os.getenv('GCP_PROJECT_ID')})")
+
             elif provider == "openai":
                 from langchain_openai import ChatOpenAI
                 r_model = os.getenv("OPENAI_ROUTER_MODEL", "gpt-4o-mini")
@@ -289,7 +415,7 @@ if st.button("현재 LLM 제공자 API 연결 및 모델 테스트", use_contain
 
             else:
                 import requests
-                ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                ollama_url = os.getenv("OLLAMA_BASE_URL")
                 resp = requests.get(f"{ollama_url.rstrip('/')}/api/tags", timeout=5)
                 if resp.status_code == 200:
                     models = [m["name"] for m in resp.json().get("models", [])]

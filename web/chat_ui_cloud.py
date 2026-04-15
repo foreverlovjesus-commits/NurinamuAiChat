@@ -1,6 +1,10 @@
 import streamlit as st
 import requests
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
 import time
 
 # --- 💡 페이지 기본 설정 ---
@@ -49,7 +53,7 @@ if prompt := st.chat_input("클라우드 엔진에게 질문해 보세요 (예: 
         try:
             # 8001번 포트(Cloud 서버) 호출
             response = requests.post(
-                "http://localhost:8001/ask",
+                f"{BACKEND_URL}/ask",
                 json={"question": prompt},
                 stream=True,
                 timeout=120

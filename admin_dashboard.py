@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import asyncio
 import usage_tracker
 from integrations.mcp_law_client import McpLawClient
+from server.admin_auth import verify_login, has_access, get_all_users, upsert_user, toggle_user_active, delete_user, ROLE_DISPLAY
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
@@ -131,9 +132,33 @@ def fetch_file_model_matrix():
     except Exception:
         return {}
 
-# 💡 페이지 자동 새로고침 및 기본 설정
+# 서서히 페이지 설정
 st.set_page_config(page_title="Admin Dashboard", layout="wide")
-st.title("Admin Dashboard")
+
+# ── 로그인 게이트 ── 로그인 전에는 로그인 폼만 표시 후 st.stop() ──
+if "admin_user" not in st.session_state:
+    st.title("누리나무 AI 관리자 로그인")
+    st.markdown("---")
+    with st.form("login_form", clear_on_submit=False):
+        col_l, col_m, col_r = st.columns([1, 2, 1])
+        with col_m:
+            st.markdown("#### 관리자 인증")
+            uid = st.text_input("아이디", placeholder="acrcaimanager", key="login_uid")
+            pwd = st.text_input("비밀번호", type="password", key="login_pwd")
+            submitted = st.form_submit_button("로그인", use_container_width=True, type="primary")
+            if submitted:
+                user = verify_login(uid.strip(), pwd)
+                if user:
+                    st.session_state.admin_user = user
+                    st.rerun()
+                else:
+                    st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+    st.stop()  # 로그인 전에는 이후 코드 실행 차단
+
+_current_user = st.session_state.admin_user
+_current_role = _current_user["role"]
+
+st.title(f"Admin Dashboard")
 
 # --- Cloudtype 스타일 커스텀 CSS 주입 (Light/Dark Mode 완벽 지원) ---
 custom_css = """
@@ -153,8 +178,16 @@ div[data-baseweb="input"] > div, div[data-baseweb="select"] > div { border-radiu
 """
 st.markdown(custom_css.replace('\n', ' '), unsafe_allow_html=True)
 
-# ─── 사이드바: DB 연결 상태 진단 ───
+# ─── 사이드바: 로그인 사용자 정보 + 로그아웃 ───
 with st.sidebar:
+    st.markdown(f"""
+    **{_current_user['display_name']}** 
+    `{ROLE_DISPLAY.get(_current_role, _current_role)}`
+    """)
+    if st.button("🚪 로그아웃", use_container_width=True):
+        del st.session_state.admin_user
+        st.rerun()
+    st.markdown("---")
     st.markdown("### DB 연결 상태")
     db_url_test = get_db_url()
     if db_url_test is None:
@@ -243,10 +276,10 @@ def read_tail_logs(lines_count=10):
         return "로그를 읽어오는 중 오류가 발생했습니다."
 
 # ===========================
-# 탭 구성: [모니터링] / [비교] / [디버그] / [문서 관리] / [그래프] / [사용량] / [프롬프트] / [설정]
+# 탭 구성 (역할별 제한)
 # ===========================
-tab_monitor, tab_benchmark, tab_accuracy, tab_security, tab_debug, tab_manage, tab_graph, tab_ontology, tab_prompt, tab_usage, tab_config = st.tabs([
-    "배치 모니터링", "모델 성능 비교", "🎯 정확도 평가", "🛡️ 입력 보안", "검색 디버그", "문서 관리", "지식 그래프", "🧠 온톨로지 관리", "📝 프롬프트 관리", "API 사용량", "환경 설정"
+tab_monitor, tab_benchmark, tab_accuracy, tab_security, tab_debug, tab_manage, tab_graph, tab_ontology, tab_prompt, tab_usage, tab_config, tab_users = st.tabs([
+    "배치 모니터링", "모델 성능 비교", "🎯 정확도 평가", "🛡️ 입력 보안", "검색 디버그", "문서 관리", "지식 그래프", "🧠 온톨로지 관리", "📝 프롬프트 관리", "API 사용량", "환경 설정", "👥 사용자 관리"
 ])
 
 # ─────────────────────────────
@@ -2051,7 +2084,8 @@ with tab_config:
             "local":     "구축형 로컬 AI (Ollama)",
             "openai":    "OpenAI (모델명은 하단에서 직접 설정)",
             "gemini":    "Google Gemini (모델명은 하단에서 직접 설정)",
-            "anthropic": "Anthropic Claude (모델명은 하단에서 직접 설정)"
+            "anthropic": "Anthropic Claude (모델명은 하단에서 직접 설정)",
+            "vertex":    "Google Cloud Vertex AI (엔터프라이즈 GCP 환경)"
         }
         # LLM_PROVIDER (레거시) / GLOBAL_LLM_PROVIDER 양쪽 모두 확인
         current_llm = os.getenv("GLOBAL_LLM_PROVIDER", os.getenv("LLM_PROVIDER", "local"))
@@ -2150,15 +2184,34 @@ with tab_config:
         google_key = st.text_input("Google AI Studio API Key (gemini-2.5-flash 등)", value=os.getenv("GOOGLE_API_KEY", ""), type="password")
         anthropic_key = st.text_input("Anthropic API Key (claude-3-5-sonnet 등)", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
         
+        st.markdown("---")
+        st.markdown("##### ☁️ Vertex AI (GCP) 엔터프라이즈 모드 인증 정보")
+        gcp_project = st.text_input("GCP Project ID 명", value=os.getenv("GCP_PROJECT_ID", ""))
+        gcp_location = st.text_input("GCP Location (기본값: asia-northeast3)", value=os.getenv("GCP_LOCATION", "asia-northeast3"))
+        gcp_json_file = st.file_uploader("GCP 서비스 계정 Key (JSON) 업로드", type=['json'], help="업로드 시 서버의 config 폴더 내부에 안전하게 임시 적용됩니다.")
+        
         submitted = st.form_submit_button("설정 저장")
         if submitted:
             if not os.path.exists(ENV_PATH):
                 with open(ENV_PATH, "w") as f:
                     f.write("\n")
-            safe_set_key(ENV_PATH, "OPENAI_API_KEY", openai_key)
-            safe_set_key(ENV_PATH, "GOOGLE_API_KEY", google_key)
-            safe_set_key(ENV_PATH, "ANTHROPIC_API_KEY", anthropic_key)
-            st.success("API 키가 `.env` 파일에 성공적으로 저장되었습니다.")
+            safe_set_key(ENV_PATH, "OPENAI_API_KEY", openai_key.strip())
+            safe_set_key(ENV_PATH, "GOOGLE_API_KEY", google_key.strip())
+            safe_set_key(ENV_PATH, "ANTHROPIC_API_KEY", anthropic_key.strip())
+            
+            safe_set_key(ENV_PATH, "GCP_PROJECT_ID", gcp_project.strip())
+            safe_set_key(ENV_PATH, "GCP_LOCATION", gcp_location.strip())
+            
+            if gcp_json_file is not None:
+                config_dir = os.path.join(BASE_DIR, "config")
+                os.makedirs(config_dir, exist_ok=True)
+                filepath = os.path.join(config_dir, "gcp_credentials.json")
+                with open(filepath, "wb") as f:
+                    f.write(gcp_json_file.getbuffer())
+                safe_set_key(ENV_PATH, "GOOGLE_APPLICATION_CREDENTIALS", filepath)
+                
+            st.success("API 키 및 GCP 계정 설정이 `.env` 파일에 성공적으로 저장되었습니다.")
+            load_dotenv(ENV_PATH, override=True)
 
     st.markdown("---")
     st.markdown("### LLM 모델명 직접 설정 (상용 및 로컬)")
@@ -2234,6 +2287,13 @@ with tab_config:
                     llm_m = ChatGoogleGenerativeAI(model=m_model, temperature=0, max_output_tokens=10)
                     llm_m.invoke("test")
                     st.success(f"✅ Gemini 통신 정상! (라우터: {r_model}, 메인: {m_model})")
+                elif provider == "vertex":
+                    from langchain_google_vertexai import ChatVertexAI
+                    r_model = os.getenv("GEMINI_ROUTER_MODEL", "gemini-1.5-flash")
+                    m_model = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
+                    llm_r = ChatVertexAI(project=os.getenv("GCP_PROJECT_ID"), location=os.getenv("GCP_LOCATION"), model=r_model, temperature=0, max_retries=1)
+                    llm_r.invoke("test")
+                    st.success(f"✅ Vertex AI 연결 성공! (라우터: {r_model}, 프로젝트: {os.getenv('GCP_PROJECT_ID')})")
 
                 elif provider == "openai":
                     from langchain_openai import ChatOpenAI

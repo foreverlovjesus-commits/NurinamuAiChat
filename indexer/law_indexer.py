@@ -168,7 +168,7 @@ async def main():
     if not db_url:
         return
 
-    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+    mcp_url = os.getenv("MCP_SERVER_URL", "")
     mcp_client = McpLawClient(base_url=mcp_url)
 
     if not await mcp_client.is_healthy():

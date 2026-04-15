@@ -252,7 +252,7 @@ with st.expander("기관별 법령 일괄 등록", expanded=False):
 
     if search_for_reg and org_for_reg:
         async def _search_org_for_reg(query):
-            mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+            mcp_url = os.getenv("MCP_SERVER_URL")
             client = McpLawClient(base_url=mcp_url)
             if not await client.is_healthy():
                 return [], "MCP 서버에 연결할 수 없습니다."
@@ -371,7 +371,7 @@ elif dl_mode == "기관별 검색":
 
     if search_org and org_query:
         async def search_org_laws(query):
-            mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+            mcp_url = os.getenv("MCP_SERVER_URL")
             client = McpLawClient(base_url=mcp_url)
             if not await client.is_healthy():
                 return [], "MCP 서버에 연결할 수 없습니다."
@@ -447,7 +447,7 @@ elif dl_mode == "기관별 검색":
 
 # ── 공통 함수 정의 (참조 법령 다운로드에서도 재사용) ──
 async def fetch_all_targets(target_list, progress_bar):
-    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+    mcp_url = os.getenv("MCP_SERVER_URL")
     client = McpLawClient(base_url=mcp_url)
     if not await client.is_healthy():
         return None, "MCP 서버에 연결할 수 없습니다."

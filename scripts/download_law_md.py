@@ -12,7 +12,7 @@ from integrations.mcp_law_client import McpLawClient
 async def main():
     # 환경 변수 로드
     load_dotenv(os.path.join(BASE_DIR, ".env"))
-    mcp_url = os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+    mcp_url = os.getenv("MCP_SERVER_URL")
     
     print(f"🔗 MCP 서버({mcp_url})에 연결 중...")
     mcp_client = McpLawClient(base_url=mcp_url)

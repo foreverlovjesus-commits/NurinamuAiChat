@@ -14,6 +14,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
+
+# NEXT_PUBLIC_* 변수는 빌드 타임에 번들로 인라이닝됨.
+# 배포 시 반드시 --build-arg NEXT_PUBLIC_API_BASE_URL=https://... 로 주입할 것.
+# 기본값은 로컬 개발 편의용이며 운영 빌드에서 절대 사용 금지.
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
+
 RUN npm run build
 
 # 3. 배포용 최적화 스테이지 (Standalone)
@@ -36,7 +43,8 @@ USER nextjs
 
 EXPOSE 3000
 ENV PORT 3000
-# 서버 주소 (배포 환경에 맞게 백엔드 API 주소 설정)
-ENV NEXT_PUBLIC_API_BASE_URL http://localhost:8000
+# NEXT_PUBLIC_API_BASE_URL은 builder 스테이지에서 번들에 이미 인라이닝되었으므로
+# runner 스테이지에서 ENV로 다시 설정해도 클라이언트 JS에는 반영되지 않음.
+# (서버 사이드 런타임 참조용으로만 필요한 경우 --build-arg 또는 docker run -e 사용)
 
 CMD ["node", "server.js"]

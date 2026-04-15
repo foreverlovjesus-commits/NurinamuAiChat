@@ -34,19 +34,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 스테이징 서버 SSH 배포
-        uses: appleboy/ssh-action@v1
+      - name: GCP 인증 (Staging)
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
-          script: |
-            cd /opt/rag-chatbot
-            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:latest
-            docker-compose up -d --no-deps api
-            sleep 10
-            curl -f http://localhost:8000/health || exit 1
-            echo "✅ 스테이징 배포 완료"
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_STAGING }}
+          
+      - name: Cloud Run 스테이징 배포
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: nurinamu-api-staging
+          region: asia-northeast3
+          image: ${{ secrets.DOCKER_USERNAME }}/rag-api:latest
 
   deploy-production:
     name: 운영 서버 배포 (무중단 Rolling)
@@ -54,32 +53,19 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production        # GitHub에서 수동 승인 필요
-      url: https://www.acrc.go.kr/chatbot
+      url: https://api.nurinamu.go.kr
 
     steps:
-      - name: 운영 서버 #1 배포
-        uses: appleboy/ssh-action@v1
+      - name: GCP 인증 (Production)
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.PROD_HOST_1 }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            cd /opt/rag-chatbot
-            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
-            docker-compose up -d --no-deps api
-            sleep 15
-            curl -f http://localhost:8000/health || exit 1
+          credentials_json: ${{ secrets.GCP_CREDENTIALS_PROD }}
 
-      - name: 운영 서버 #2 배포
-        uses: appleboy/ssh-action@v1
+      - name: Cloud Run 운영 배포
+        uses: google-github-actions/deploy-cloudrun@v2
         with:
-          host: ${{ secrets.PROD_HOST_2 }}
-          username: ${{ secrets.PROD_USER }}
-          key: ${{ secrets.PROD_SSH_KEY }}
-          script: |
-            cd /opt/rag-chatbot
-            docker pull ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
-            docker-compose up -d --no-deps api
-            sleep 15
-            curl -f http://localhost:8000/health || exit 1
-            echo "✅ 운영 배포 완료 — SHA: ${{ github.sha }}"
+          service: nurinamu-api-prod
+          region: asia-northeast3
+          image: ${{ secrets.DOCKER_USERNAME }}/rag-api:${{ github.sha }}
+          env_vars: |
+            APP_ENV=production

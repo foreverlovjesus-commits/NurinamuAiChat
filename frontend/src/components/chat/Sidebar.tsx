@@ -6,9 +6,10 @@ import { getAllSessions } from '@/api/client';
 interface SidebarProps {
   currentSessionId: string;
   onSelectSession: (id: string | null) => void;
+  appName: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSelectSession }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSelectSession, appName }) => {
   const [sessions, setSessions] = useState<{ session_id: string; updated_at: string; preview?: string }[]>([]);
 
   useEffect(() => {
@@ -166,7 +167,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onSelectSession }) 
           <div className="status-dot-active" aria-hidden="true" />
           <div>
             <div className="text-[10px] font-bold" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              누리나무 AI v4.1 정식 서비스
+              {appName} 정식 서비스
             </div>
             <div className="text-[9px]" style={{ color: 'rgba(255,255,255,0.25)' }}>
               국민권익위원회 운영

@@ -6,7 +6,8 @@ import time
 import uuid
 # 💡 윈도우 한글 경로 인코딩 에러(asyncpg) 방지를 위한 전역 설정
 os.environ["PYTHONUTF8"] = "1"
-os.environ["PGPASSFILE"] = "NUL"
+# PGPASSFILE: Windows는 "NUL", Linux/macOS는 "/dev/null" (플랫폼별 널 디바이스)
+os.environ["PGPASSFILE"] = "NUL" if os.name == "nt" else "/dev/null"
 from fastapi import FastAPI, Depends, HTTPException, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -40,6 +41,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 load_dotenv(ENV_PATH)
 
+# 💡 실행 환경 구분 (development / staging / production)
+# - development (기본): 관리자 대시보드의 .env 편집이 즉시 반영되도록 핫 리로드 활성화
+# - production: 핫 리로드 비활성화 (멀티워커 race condition 방지, 재배포로 설정 변경)
+APP_ENV = os.getenv("APP_ENV", "development").lower()
+ENABLE_HOT_RELOAD = APP_ENV == "development"
+
 # DB URL 복구 및 우선순위 결정 (Docker 환경 지원)
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
@@ -51,14 +58,14 @@ if not DB_URL:
             DB_URL = cipher.decrypt(encrypted_url.encode()).decode()
             logger.info("🔑 보안 DB 연결 URL 복호화 완료")
         else:
-            logger.warning("⚠️ DATABASE_URL 및 보안 환경 변수가 없습니다. 기본 로컬 DB를 시도합니다.")
-            DB_URL = "postgresql://postgres:postgres@localhost:5432/nurinamu_db"
+            logger.warning("⚠️ DATABASE_URL 및 보안 환경 변수가 없습니다.")
+            DB_URL = "postgresql://postgres:postgres@db:5432/nurinamu_chat_db" # fallback
     except Exception as e:
         logger.critical("보안 복호화 에러: %s", e)
         # 운영 환경에서 DB 없이는 구동 불가
         if os.getenv("NODE_ENV") == "production":
             raise SystemExit(1)
-        DB_URL = "postgresql://postgres:postgres@localhost:5432/nurinamu_db"
+        DB_URL = "postgresql://postgres:postgres@db:5432/nurinamu_chat_db"
 
 # --- 🚀 보안 및 속도 제한 설정 (조달청 납품 보안 강화) ---
 RATE_LIMIT = os.getenv("RATE_LIMIT_PER_MINUTE", "30/minute")  # 기관별 조정 가능
@@ -124,13 +131,18 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS 설정 — 조달청 보안 요건: 화이트리스트 필수, 와일드카드 금지
 allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "")
 if not allowed_origins_raw or allowed_origins_raw.strip() == "*":
-    if os.getenv("NODE_ENV") == "production":
+    if os.getenv("APP_ENV") == "production":
         logger.critical("❌ [보안] ALLOWED_ORIGINS 환경변수를 반드시 지정해야 합니다. 와일드카드(*) 사용 불가.")
         raise SystemExit(1)
     else:
-        # 개발환경에서만 허용
-        allowed_origins = ["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000"]
-        logger.warning("⚠️ 개발 환경 CORS: localhost만 허용합니다. 운영 시 ALLOWED_ORIGINS를 설정하세요.")
+        # 개발환경에서만 허용 (FRONTEND_URL, ADMIN_URL 사용)
+        frontend_url = os.getenv("FRONTEND_URL", "")
+        admin_url = os.getenv("ADMIN_URL", "")
+        allowed_origins = [url for url in [frontend_url, admin_url] if url]
+        if not allowed_origins:
+            logger.critical("❌ [보안] ALLOWED_ORIGINS가 설정되지 않았고 FRONTEND_URL도 없습니다.")
+            raise SystemExit(1)
+        logger.warning("⚠️ 개발 환경 CORS: FRONTEND_URL 및 ADMIN_URL만 허용합니다.")
 else:
     allowed_origins = [origin.strip() for origin in allowed_origins_raw.split(",") if origin.strip()]
     logger.info("✅ [보안] CORS 허용 도메인: %s", allowed_origins)
@@ -209,22 +221,6 @@ async def ask_endpoint(request: Request, user_req: UserRequest, api_key: str = D
     user_ip = request.client.host if request.client else "unknown"
     start_time = time.time()
 
-    # 💡 핫 리로드(Hot-Reload): 임베딩 모델 변경 감지 시 백그라운드 무중단 교체
-    from dotenv import dotenv_values
-    env_dict = dotenv_values(ENV_PATH)
-    env_embed = env_dict.get("GLOBAL_EMBEDDING_MODEL", "BAAI/bge-m3")
-
-    if hasattr(global_retriever, 'active_embedding_model_name'):
-        if global_retriever.active_embedding_model_name != env_embed:
-            logger.warning("🔄 [핫 리로드] 임베딩 모델 변경 감지 (%s -> %s). 검색 엔진을 동적 교체합니다...", global_retriever.active_embedding_model_name, env_embed)
-            try:
-                new_retriever = get_retriever(DB_URL)
-                global_retriever = new_retriever
-                rag_engine.retriever = new_retriever
-                logger.info("✅ 챗봇 검색 엔진 핫 리로드 완료!")
-            except Exception as e:
-                logger.error("❌ 핫 리로드 실패: %s", e)
-
     async def event_generator():
         success = False
         error_code = None
@@ -260,23 +256,60 @@ async def ask_endpoint(request: Request, user_req: UserRequest, api_key: str = D
         finally:
             # 감사 로그 기록 (조달청 납품 요건)
             elapsed_ms = int((time.time() - start_time) * 1000)
+            
+            async def safe_log_audit_event():
+                try:
+                    await log_audit_event(
+                        db_manager=db_manager,
+                        session_id=session_id,
+                        user_ip=user_ip,
+                        question=question,
+                        request_id=request_id,
+                        response_time_ms=elapsed_ms,
+                        success=success,
+                        error_code=error_code,
+                    )
+                except Exception as e:
+                    logger.error("❌ [Audit] 감사 로그 기록 실패: %s", e)
+
             import asyncio
-            asyncio.ensure_future(
-                log_audit_event(
-                    db_manager=db_manager,
-                    session_id=session_id,
-                    user_ip=user_ip,
-                    question=question,
-                    request_id=request_id,
-                    response_time_ms=elapsed_ms,
-                    success=success,
-                    error_code=error_code,
-                )
-            )
+            asyncio.ensure_future(safe_log_audit_event())
 
     response = StreamingResponse(event_generator(), media_type="text-event-stream")
     response.headers["X-Request-ID"] = request_id
     return response
+
+@app.get("/config/ui")
+async def get_ui_config():
+    """프론트엔드 UI/기능 제어를 위한 동적 환경 변수를 반환합니다."""
+    from dotenv import dotenv_values
+    env_dict = dotenv_values(ENV_PATH)
+    
+    hide_session_list = env_dict.get("HIDE_SESSION_LIST", "false").strip().lower() == "true"
+    hide_compare_tab = env_dict.get("HIDE_COMPARE_TAB", "false").strip().lower() == "true"
+    hide_usage_stats = env_dict.get("HIDE_USAGE_STATS", "false").strip().lower() == "true"
+    hide_secure_icon = env_dict.get("HIDE_SECURE_ICON", "false").strip().lower() == "true"
+    hide_pdf_export = env_dict.get("HIDE_PDF_EXPORT", "false").strip().lower() == "true"
+    hide_share_icon = env_dict.get("HIDE_SHARE_ICON", "false").strip().lower() == "true"
+    app_name = env_dict.get("APP_NAME", "누리나무 AI 법률통합지원 시스템")
+    app_bot_name = env_dict.get("APP_BOT_NAME", "누리나무 법률 AI")
+    app_icon = env_dict.get("APP_ICON", "⚖️")
+    app_logo_path = env_dict.get("APP_LOGO_PATH", "")
+    enable_conversation_history = env_dict.get("ENABLE_CONVERSATION_HISTORY", "false").strip().lower() == "true"
+
+    return {
+        "hide_session_list": hide_session_list,
+        "hide_compare_tab": hide_compare_tab,
+        "hide_usage_stats": hide_usage_stats,
+        "hide_secure_icon": hide_secure_icon,
+        "hide_pdf_export": hide_pdf_export,
+        "hide_share_icon": hide_share_icon,
+        "app_name": app_name,
+        "app_bot_name": app_bot_name,
+        "app_icon": app_icon,
+        "app_logo_path": app_logo_path,
+        "enable_conversation_history": enable_conversation_history,
+    }
 
 # 정적 파일 서빙 (HTML+JS UI) — API 라우트 등록 후 마지막에 마운트
 STATIC_DIR = os.path.join(BASE_DIR, "static")

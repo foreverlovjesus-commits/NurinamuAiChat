@@ -27,6 +27,68 @@ def _extract_law_names(text: str) -> list:
             laws.add(clean_name)
     return list(laws)
 
+
+def _friendly_error_message(e: Exception) -> str:
+    """API/시스템 에러를 HTTP 상태 코드별 친절한 한국어 안내 메시지로 변환합니다."""
+    err_str = str(e)
+    err_lower = err_str.lower()
+
+    # ── 503 Service Unavailable: 서버 과부하 ──────────────────────────────
+    if '503' in err_str or 'unavailable' in err_lower or 'high demand' in err_lower:
+        return (
+            "🔶 현재 AI 서비스에 접속자가 일시적으로 집중되어 응답 지연이 발생하고 있습니다.\n"
+            "잠시 후(약 30초 ~ 1분) 다시 질문해 주시면 정상적으로 답변 드리겠습니다."
+        )
+    # ── 429 Too Many Requests: 요청 한도 초과 ────────────────────────────
+    elif '429' in err_str or 'rate limit' in err_lower or 'quota' in err_lower or 'resource_exhausted' in err_lower:
+        return (
+            "⏳ 단시간 내 요청이 너무 많아 일시적으로 처리가 제한되었습니다.\n"
+            "1~2분 후 다시 시도해 주세요. 반복 발생 시 관리자에게 문의해 주세요."
+        )
+    # ── 401 Unauthorized: API 키 인증 오류 ───────────────────────────────
+    elif '401' in err_str or 'unauthorized' in err_lower or 'api_key' in err_lower or 'api key' in err_lower:
+        return (
+            "🔑 AI 서비스 인증에 실패했습니다.\n"
+            "시스템 관리자에게 API 키 설정을 확인해 달라고 문의해 주세요."
+        )
+    # ── 403 Forbidden: 접근 권한 없음 ────────────────────────────────────
+    elif '403' in err_str or 'forbidden' in err_lower or 'permission' in err_lower:
+        return (
+            "🚫 현재 사용 중인 AI 모델에 대한 접근 권한이 없습니다.\n"
+            "관리자에게 모델 접근 권한을 확인해 달라고 문의해 주세요."
+        )
+    # ── 400 Bad Request: 잘못된 요청 ─────────────────────────────────────
+    elif '400' in err_str or 'bad request' in err_lower or 'invalid' in err_lower:
+        return (
+            "⚠️ 요청 형식이 올바르지 않아 처리하지 못했습니다.\n"
+            "질문 내용을 다시 확인하거나, 더 짧고 구체적으로 입력 후 시도해 주세요."
+        )
+    # ── 500 Internal Server Error ─────────────────────────────────────────
+    elif '500' in err_str or 'internal server error' in err_lower:
+        return (
+            "🛠️ AI 서버 내부에서 예기치 않은 오류가 발생했습니다.\n"
+            "잠시 후 다시 시도해 주세요. 문제가 지속되면 관리자에게 문의해 주세요."
+        )
+    # ── 타임아웃 ────────────────────────────────────────────────────────
+    elif 'timeout' in err_lower or 'timed out' in err_lower or 'asyncio.timeouterror' in err_lower:
+        return (
+            "⌛ 서버 응답 시간이 초과되었습니다.\n"
+            "질문이 매우 복잡하거나 서버가 혼잡할 수 있습니다. 잠시 후 다시 시도해 주세요."
+        )
+    # ── 연결 오류 (네트워크) ──────────────────────────────────────────────
+    elif 'connection' in err_lower or 'network' in err_lower or 'socket' in err_lower:
+        return (
+            "📡 네트워크 연결 오류가 발생했습니다.\n"
+            "인터넷 연결 상태를 확인하시고, 잠시 후 다시 시도해 주세요."
+        )
+    # ── 기타 알 수 없는 에러 ─────────────────────────────────────────────
+    else:
+        return (
+            "❗ 일시적인 오류가 발생하여 답변을 처리하지 못했습니다.\n"
+            "잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요."
+        )
+
+
 class RAGEngineV3:
 
     def __init__(self, retriever):
@@ -36,7 +98,9 @@ class RAGEngineV3:
 
     def _get_llm(self, llm_type: str, is_router: bool = False):
         from dotenv import dotenv_values
-        env_dict = dotenv_values(".env")
+        # ✅ 절대 경로로 .env 로드 (실행 디렉터리와 무관하게 항상 프로젝트 루트 참조)
+        _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+        env_dict = dotenv_values(_env_path)
         
         llm_type = llm_type.lower()
         if llm_type == "openai":
@@ -55,12 +119,21 @@ class RAGEngineV3:
             from langchain_anthropic import ChatAnthropic
             model_name = env_dict.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
             return ChatAnthropic(model=model_name, temperature=0)
+        elif llm_type == "vertex":
+            from langchain_google_vertexai import ChatVertexAI
+            project = env_dict.get("GCP_PROJECT_ID")
+            location = env_dict.get("GCP_LOCATION", "asia-northeast3")
+            main_model = env_dict.get("GEMINI_MODEL", "gemini-1.5-pro")
+            router_model = env_dict.get("GEMINI_ROUTER_MODEL", "gemini-1.5-flash")
+            model_name = router_model if is_router else main_model
+            # credentials는 OS 환경변수 GOOGLE_APPLICATION_CREDENTIALS에서 자동 로드됨
+            return ChatVertexAI(project=project, location=location, model=model_name, temperature=0)
         else:
             from langchain_ollama import ChatOllama
             main_model = env_dict.get("MAIN_LLM_MODEL", "qwen2.5:14b")
             router_model = env_dict.get("ROUTER_LLM_MODEL", "exaone3.5:2.4b")
             model_name = router_model if is_router else main_model
-            ollama_url = env_dict.get("OLLAMA_BASE_URL", "http://localhost:11434")
+            ollama_url = env_dict.get("OLLAMA_BASE_URL")
             return ChatOllama(model=model_name, temperature=0, base_url=ollama_url)
 
     async def classify_category(self, question: str, router_llm) -> dict:
@@ -140,7 +213,7 @@ class RAGEngineV3:
             def_docs = await self.retriever.retrieve(def_query, final_k=2)
             def_context = "\n".join([doc.page_content[:1000] for doc in def_docs])
             messages = [
-                SystemMessage(content="답변은 '적격', '부적격', '판단불가' 중 하나로 시작하고 이유를 작성하세요."),
+                SystemMessage(content="당신은 사용자의 질문이 우리 기관의 법률(청탁금지법, 이해충돌 등) 상담 대상에 해당하는지 판별합니다. 질의 대상자가 법 적용 대상(공직자등)이라면 '행위의 불법 여부'와 무관하게 무조건 '적격'입니다. 답변은 반드시 '적격', '부적격', '판단불가' 중 하나의 단어로 시작하고 그 뒤에 이유를 작성하세요."),
                 HumanMessage(content=f"[정의 문서]\n{def_context}\n\n[질문]\n{question}")
             ]
             res = await asyncio.wait_for(router_llm.ainvoke(messages), timeout=15)
@@ -167,15 +240,27 @@ class RAGEngineV3:
         if not question or not question.strip():
             yield f"data: {json.dumps({'type': 'error', 'content': '질문을 입력해 주세요.'})}\n\n"; return
 
+        # ── 대화 이력 연계 제어 (관리자 화면에서 ENABLE_CONVERSATION_HISTORY 토글로 실시간 제어) ──
+        enable_conv_history = env_dict.get("ENABLE_CONVERSATION_HISTORY", "false").strip("'\"").lower() == "true"
         history = []
-        if db_manager and session_id:
-            # 🚀 In-memory 딕셔너리 누수를 방지하기 위해 DB에서 직접 대화 이력을 로드 (최대 6개)
+        if enable_conv_history and db_manager and session_id:
+            # 이력 연계 모드: DB에서 최실 6개 로드
             history = await db_manager.get_history(session_id, limit=6)
             await db_manager.save_message(session_id, "user", question)
+        # 이력 연계 OFF 시: history=[]으로 고정, 저장 안 함
 
         t_route_start = time.time()
-        router_llm = self._get_llm(llm_type, is_router=True)
-        search_query = await self.condense_question(question, history, router_llm)
+        # ── pure_llm + 독립질의 모드: 라우터 LLM 호출 자체를 완전 생략 ──
+        # 라우터가 없으면 해당 모덧에 추가 API 호출이 발생하지 않아 503 확률 절반 감소
+        router_llm = None
+        if mode == "auto" or (enable_conv_history and history):
+            router_llm = self._get_llm(llm_type, is_router=True)
+
+        # 이력 연계 시 condense_question으로 질문 재구성, 독립 모드시 원문 그대로 사용
+        if enable_conv_history and history and router_llm:
+            search_query = await self.condense_question(question, history, router_llm)
+        else:
+            search_query = question
         db_query = search_query
         
         # Route logic
@@ -218,15 +303,24 @@ class RAGEngineV3:
                             category = query_metadata["law_category"]
                             reason = f"메타데이터 분석기(Tagger)에 의해 '{category}' 관련 질의로 명확히 분류됨."
                 t_tag_end = time.time()
-                yield f"data: {json.dumps({'type': 'chunk', 'content': f'💡 [메타데이터 필터 태깅 완료: {t_tag_end - t_tag_start:.1f}초 경과]\n'}, ensure_ascii=False)}\n\n"
+                if mode != "pure_llm":  # pure_llm 모드에서는 내부 처리 메시지 숨김
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': f'💡 [메타데이터 필터 태깅 완료: {t_tag_end - t_tag_start:.1f}초 경과]\n'}, ensure_ascii=False)}\n\n"
             except Exception as e:
                 logger.warning(f"쿼리 메타데이터 추출 실패 (무시): {e}")
 
-        # 보정된 카테고리를 프론트엔드로 전송
-        yield f"data: {json.dumps({'type': 'category', 'content': category, 'reason': reason, 'summary_5w1h': summary_5w1h}, ensure_ascii=False)}\n\n"
-        # FIRAC 모드 활성화 시에는 메타데이터 태그를 별도로 전송하지 않음 (FIRAC 구조 내에 포함되거나 불필요하다고 가정)
-        if query_metadata and not enable_firac:
-            yield f"data: {json.dumps({'type': 'metadata_tags', 'content': query_metadata}, ensure_ascii=False)}\n\n"
+        # 보정된 카테고리에 현재 핵심 설정 상태를 병합하여 프론트엔드로 전송
+        # 메타데이터 태깅이 꺼져 있으면 분류 표시 및 태그를 전송하지 않음
+        enable_metadata_tagging = env_dict.get("ENABLE_METADATA_TAGGING", "true").strip("'\"").lower() == "true"
+        if enable_metadata_tagging:
+            mode_korean = "RAG" if mode != "pure_llm" else "순수LLM"
+            style_korean = {"concise": "간결체", "narrative": "만연체", "prolix": "상세체"}.get(f_style, "기본체")
+            template_korean = {"statutory": "조문", "judicial": "판결문", "basic": "기본기"}.get(f_type, "기본기")
+            firac_str = f"FIRAC({style_korean}+{template_korean})" if enable_firac else "FIRAC Off"
+            display_category = f"{category} ⏐ {mode_korean} ⏐ {llm_type.upper()} ⏐ {firac_str}"
+            yield f"data: {json.dumps({'type': 'category', 'content': display_category, 'reason': reason, 'summary_5w1h': summary_5w1h}, ensure_ascii=False)}\n\n"
+            # FIRAC 모드 활성화 시에는 메타데이터 태그를 별도로 전송하지 않음
+            if query_metadata and not enable_firac:
+                yield f"data: {json.dumps({'type': 'metadata_tags', 'content': query_metadata}, ensure_ascii=False)}\n\n"
 
         # Eligibility check
         try:
@@ -238,14 +332,15 @@ class RAGEngineV3:
                     yield f"data: {json.dumps({'type': 'chunk', 'content': f'부적격 차단: {eligibility_reason}'}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'type': 'done', 'session_id': session_id, 'response_time_ms': 0})}\n\n"; return
                 t_elig_end = time.time()
-                yield f"data: {json.dumps({'type': 'chunk', 'content': f'💡 [대상자 적격성 심사 통과: {t_elig_end - t_elig_start:.1f}초 경과]\n'}, ensure_ascii=False)}\n\n"
+                if route_type != "pure_llm":  # pure_llm 모드에서는 적격성 안내 숨김
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': f'💡 [대상자 적격성 심사 통과: {t_elig_end - t_elig_start:.1f}초 경과]\n'}, ensure_ascii=False)}\n\n"
 
             context_text, sources = "", []
 
             # 🚀 Retrieval 단계: MCP 실시간 연동 로직 모두 제거, Vector DB(PGVector)에 100% 의존
             if route_type == "pure_llm":
                 rag_docs = []
-                yield f"data: {json.dumps({'type': 'chunk', 'content': f'💡 [순수 지식 검색 모드 작동 (RAG 우회)]\n\n'}, ensure_ascii=False)}\n\n"
+                # pure_llm 모드: 사용자에게 내부 처리 메시지 숨김
             else:
                 t_ret_start = time.time()
                 rag_docs = await self.retriever.retrieve(db_query, final_k=3, metadata_filter=query_metadata)
@@ -299,11 +394,17 @@ class RAGEngineV3:
                     "  2) 조문 번호  예) 제10조 제1항, 시행령 별표1\n"
                     "  3) 해당 조문의 핵심 내용 요약 (1~2문장)\n\n"
                     "인용 형식 예시:\n"
-                    "  ▸ [법령명] 제O조 제O항: [조문이 규정하는 객관적 사실 및 요약].\n"
-                    "  ▸ [법령명] 시행령 별표O: [구체적 기준이나 상한액 요약].\n\n"
+                    "  - ▸ [법령명] 제O조 제O항: [조문이 규정하는 객관적 사실 및 요약].\n"
+                    "  - ▸ [법령명] 시행령 별표O: [구체적 기준이나 상한액 요약].\n\n"
                     "❌ 금지: '제8조에 따르면' 처럼 법령명 없이 조문 번호만 언급하는 방식\n"
                     "✅ 필수: 법령명 + 조문 번호 + 해당 조문이 실제로 규정하는 내용\n"
-                    "근거 조문이 [참고 데이터]에 없다면 '관련 조문을 확인할 수 없어 정확한 내용 확인이 필요합니다'라고 명시하세요.\n\n"
+                )
+                if route_type != "pure_llm":
+                    sys_instructions += "근거 조문이 [참고 데이터]에 없다면 '관련 조문을 확인할 수 없어 정확한 내용 확인이 필요합니다'라고 명시하세요.\n\n"
+                else:
+                    sys_instructions += "\n"
+                    
+                sys_instructions += (
                     "━━━ 【직무관련자 판단 필수 주의사항】 ━━━\n"
                     "청탁금지법에서 '직무관련자'를 판단할 때 반드시 아래 기준을 따르세요:\n\n"
                     "✅ 직무관련자 = 공직자등의 직무 수행과 직접 이해관계가 있는 자\n"
@@ -382,7 +483,7 @@ class RAGEngineV3:
 </details>
 
 <details>
-<summary><strong>4. Application (사안의 포섭)</strong></summary>
+<summary><strong>4. Application (사례 적용)</strong></summary>
 
 규정을 사실관계에 대입하여 위반 여부를 상세히 분석 (반드시 윗줄 띄움)
 
@@ -404,25 +505,60 @@ class RAGEngineV3:
             if route_type == "pure_llm":
                 sys_instructions += "\n\n[순수 지식 엔진 모드 최우선 규칙] 현재 RAG 참고 데이터가 시스템적으로 차단되어 제공되지 않습니다. '참고 데이터가 없다'는 회피성 기재를 절대 하지 말고, 반드시 당신의 거대한 내부 학습 지식을 총동원하여 규정과 조문을 찾아 완벽한 답변을 작성하십시오."
 
+            # ── 대화 이력 연계 여부에 따라 프롬프트 조립 ──
             prompt = [SystemMessage(content=sys_instructions)]
-            for msg in history:
-                role_msg = HumanMessage(content=msg["content"]) if msg["role"] == "user" else AIMessage(content=msg["content"])
-                prompt.append(role_msg)
+            if enable_conv_history and history:
+                for msg in history:
+                    role_msg = HumanMessage(content=msg["content"]) if msg["role"] == "user" else AIMessage(content=msg["content"])
+                    prompt.append(role_msg)
 
             # 🚀 출처 헤더 포함 컨텍스트 조립 - 항상 DB(rag_docs) 기반으로 조립
             final_context = _build_context_with_source(rag_docs) if rag_docs else context_text
-
-            final_prompt = f"[참고 데이터 — 각 항목의 [출처 N: 법령명] 을 인용에 반드시 활용하세요]\n{final_context}\n\n질문: {question}"
+            
+            if route_type == "pure_llm":
+                final_prompt = f"질문: {question}"
+            else:
+                final_prompt = f"[참고 데이터 — 각 항목의 [출처 N: 법령명] 을 인용에 반드시 활용하세요]\n{final_context}\n\n질문: {question}"
+            
             prompt.append(HumanMessage(content=final_prompt))
 
             full_answer, t_llm_start = "", time.time()
             main_llm = self._get_llm(llm_type, is_router=False)
             main_model_name = getattr(main_llm, 'model_name', getattr(main_llm, 'model', 'unknown'))
 
-            async for ch in main_llm.astream(prompt):
-                if ch.content:
-                    full_answer += ch.content
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': ch.content}, ensure_ascii=False)}\n\n"
+            # ── 자동 재시도 (503/429 과부하 대응, 최대 3회, 지수 백오프) ──
+            max_retries = 3
+            retry_delays = [1, 3, 7]  # 초단위 대기: 1초 → 3초 → 7초
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    disclaimer = "**※ 구체적 사실관계의 확인이 없는 일반론적 답변이며, 이 답변은 구체적 상황에 대한 해석으로 원용할 수 없습니다.**\n\n"
+                    full_answer = disclaimer
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': disclaimer}, ensure_ascii=False)}\n\n"
+                    
+                    async for ch in main_llm.astream(prompt):
+                        if ch.content:
+                            full_answer += ch.content
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': ch.content}, ensure_ascii=False)}\n\n"
+                    last_error = None
+                    break  # 성공 시 루프 탈출
+                except Exception as retry_err:
+                    last_error = retry_err
+                    err_str = str(retry_err)
+                    # 재시도 가능한 에러(과부하/속도제한)일 때만 재시도
+                    is_retryable = any(code in err_str for code in ['503', '429', 'UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'high demand', 'rate limit'])
+                    if is_retryable and attempt < max_retries - 1:
+                        wait_sec = retry_delays[attempt]
+                        logger.warning(f"[Retry {attempt+1}/{max_retries}] {err_str[:80]}... {wait_sec}초 후 재시도")
+                        # 프론트엔드에 초기화 신호를 먼저 보내 부분 답변을 지움
+                        yield f"data: {json.dumps({'type': 'reset'}, ensure_ascii=False)}\n\n"
+                        retry_msg = f"\n⏳ AI 서버 혼잡으로 {wait_sec}초 후 자동 재시도합니다... ({attempt+1}/{max_retries-1})\n"
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': retry_msg}, ensure_ascii=False)}\n\n"
+                        await asyncio.sleep(wait_sec)
+                        full_answer = ""  # 백엔드 누적 답변도 초기화
+                    else:
+                        raise  # 재시도 불가 에러이거나 마지막 시도이면 즉시 상위로 전달
+
 
             latency_ms = int((time.time() - t_llm_start) * 1000)
             usage_tracker.record_usage(
@@ -434,7 +570,8 @@ class RAGEngineV3:
             logger.error(f"파이프라인 실행 중 에러 발생: {e}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'type': 'error', 'content': f'내부 시스템 에러가 발생했습니다: {str(e)}'}, ensure_ascii=False)}\n\n"
+            friendly_msg = _friendly_error_message(e)
+            yield f"data: {json.dumps({'type': 'error', 'content': friendly_msg}, ensure_ascii=False)}\n\n"
             full_answer = f"에러 발생: {str(e)}"
 
         total_latency = int((time.time() - t_generate_start) * 1000)

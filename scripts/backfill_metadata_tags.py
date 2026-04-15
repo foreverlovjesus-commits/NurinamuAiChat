@@ -37,7 +37,7 @@ def get_db_url():
         cipher = Fernet(os.getenv("MASTER_KEY").encode())
         return cipher.decrypt(os.getenv("ENCRYPTED_DATABASE_URL").encode()).decode()
     except Exception:
-        return os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/nurinamu_db")
+        return os.getenv("DATABASE_URL")
 
 
 def get_tagger():
@@ -49,13 +49,20 @@ def get_tagger():
 
     if provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(model=model or "gemini-2.0-flash", temperature=0)
+        llm = ChatGoogleGenerativeAI(model=model or "gemini-2.5-flash", temperature=0)
+    elif provider == "vertex":
+        from langchain_google_vertexai import ChatVertexAI
+        llm = ChatVertexAI(
+            project=os.getenv("GCP_PROJECT_ID"),
+            location=os.getenv("GCP_LOCATION", "asia-northeast3"),
+            model=model or "gemini-1.5-flash", temperature=0
+        )
     elif provider == "openai":
         from langchain_openai import ChatOpenAI
         llm = ChatOpenAI(model=model or "gpt-4o-mini", temperature=0)
     else:
         from langchain_ollama import ChatOllama
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = os.getenv("OLLAMA_BASE_URL")
         llm = ChatOllama(
             model=model or os.getenv("ROUTER_LLM_MODEL", "exaone3.5:2.4b"),
             temperature=0, base_url=ollama_url

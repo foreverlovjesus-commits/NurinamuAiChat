@@ -90,7 +90,7 @@ def init_router_llm():
     else:
         from langchain_ollama import ChatOllama
         model = os.getenv("ROUTER_LLM_MODEL", "exaone3.5:2.4b")
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = os.getenv("OLLAMA_BASE_URL")
         return ChatOllama(model=model, temperature=0, base_url=ollama_url)
 
 

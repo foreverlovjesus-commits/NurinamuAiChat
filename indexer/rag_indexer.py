@@ -563,10 +563,13 @@ def run_indexer_v4():
     logger.info(f"사용 임베딩 모델: {embedding_model}")
     
     embed_lower = embedding_model.lower()
-    if "google" in embed_lower or "models/" in embed_lower or "embedding-0" in embed_lower:
+    emb_provider = os.getenv("GLOBAL_EMBEDDING_PROVIDER", "").lower()
+    if emb_provider == "vertex":
+        from langchain_google_vertexai import VertexAIEmbeddings
+        embeddings = VertexAIEmbeddings(model_name=embedding_model)
+    elif "google" in embed_lower or "models/" in embed_lower or "embedding-0" in embed_lower:
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
         embeddings = GoogleGenerativeAIEmbeddings(model=embedding_model, task_type="RETRIEVAL_DOCUMENT")
-    
     elif "openai" in embed_lower or "text-embedding-3" in embed_lower or "text-embedding-ada" in embed_lower:
         from langchain_openai import OpenAIEmbeddings
         embeddings = OpenAIEmbeddings(model=embedding_model)
@@ -622,7 +625,16 @@ def run_indexer_v4():
 
             if tag_provider == "gemini":
                 from langchain_google_genai import ChatGoogleGenerativeAI
-                tag_llm = ChatGoogleGenerativeAI(model=tag_model or "gemini-2.5-flash", temperature=0, max_output_tokens=2048)
+                tag_model = os.getenv("GEMINI_ROUTER_MODEL", "gemini-2.5-flash")
+                tag_llm = ChatGoogleGenerativeAI(model=tag_model, temperature=0)
+            elif tag_provider == "vertex":
+                from langchain_google_vertexai import ChatVertexAI
+                tag_model = os.getenv("GEMINI_ROUTER_MODEL", "gemini-1.5-flash")
+                tag_llm = ChatVertexAI(
+                    project=os.getenv("GCP_PROJECT_ID"),
+                    location=os.getenv("GCP_LOCATION", "asia-northeast3"),
+                    model=tag_model, temperature=0
+                )
             elif tag_provider == "openai":
                 from langchain_openai import ChatOpenAI
                 tag_llm = ChatOpenAI(model=tag_model or "gpt-4o-mini", temperature=0)
@@ -630,7 +642,7 @@ def run_indexer_v4():
                 from langchain_ollama import ChatOllama
                 tag_llm = ChatOllama(
                     model=tag_model or os.getenv("ROUTER_LLM_MODEL", "exaone3.5:2.4b"),
-                    temperature=0, base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+                    temperature=0, base_url=os.getenv("OLLAMA_BASE_URL")
                 )
             tagger = MetadataTagger(tag_llm)
             logger.info(f"🏷️ 메타데이터 태깅 활성화 (provider={tag_provider}, model={tag_llm.model})")

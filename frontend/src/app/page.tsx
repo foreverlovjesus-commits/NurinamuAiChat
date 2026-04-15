@@ -1,22 +1,33 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ChatContainer from '@/components/chat/ChatContainer';
 import ComparisonView from '@/components/chat/ComparisonView';
-import { MessageSquare, ArrowLeftRight, Settings, ShieldCheck, Scale } from 'lucide-react';
+import { MessageSquare, ArrowLeftRight, Settings, ShieldCheck, Scale, Menu } from 'lucide-react';
+import { getUIConfig } from '@/api/client';
 
 // ── 공공기관 공식 인트라넷 레이아웃 ─────────────────────────────────────────────
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'chat' | 'compare'>('chat');
+  const [uiConfig, setUiConfig] = useState({ 
+    hide_session_list: false, 
+    hide_compare_tab: false, 
+    hide_secure_icon: false 
+  });
+
+  useEffect(() => {
+    getUIConfig().then(setUiConfig).catch(console.error);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ fontFamily: 'var(--font-main)' }}>
 
-      {/* 좌측 아이코닉 내비게이션 (공공기관 딥 네이비) */}
+      {/* 좌측 아이코닉 내비게이션 (공공기관 딥 네이비) - 모바일시 숨김, 사이드바 숨김 설정 시에도 숨김 */}
+      {!uiConfig.hide_session_list && (
       <nav
         role="navigation"
         aria-label="주요 메뉴"
-        className="w-[68px] flex flex-col items-center py-5 gap-0 border-r z-50 flex-shrink-0"
+        className="hidden md:flex w-[68px] flex-col items-center py-5 gap-0 border-r z-50 flex-shrink-0"
         style={{
           background: 'var(--gov-navy)',
           borderColor: 'rgba(255,255,255,0.07)',
@@ -51,18 +62,21 @@ export default function Home() {
             onClick={() => setActiveTab('chat')}
             id="nav-chat"
           />
-          <NavButton
-            label="문서 비교"
-            icon={<ArrowLeftRight size={20} strokeWidth={2} />}
-            isActive={activeTab === 'compare'}
-            onClick={() => setActiveTab('compare')}
-            id="nav-compare"
-          />
+          {!uiConfig.hide_compare_tab && (
+            <NavButton
+              label="문서 비교"
+              icon={<ArrowLeftRight size={20} strokeWidth={2} />}
+              isActive={activeTab === 'compare'}
+              onClick={() => setActiveTab('compare')}
+              id="nav-compare"
+            />
+          )}
         </div>
 
         {/* 하단 상태 표시 */}
         <div className="mt-auto flex flex-col items-center gap-4 pb-2 px-2 w-full">
           {/* 시스템 상태 */}
+          {!uiConfig.hide_secure_icon && (
           <div
             className="flex flex-col items-center gap-1"
             title="시스템 정상 운영 중"
@@ -77,6 +91,7 @@ export default function Home() {
               보안 연결
             </span>
           </div>
+          )}
           {/* 설정 */}
           <button
             className="flex flex-col items-center gap-1 w-full py-2 rounded-lg transition-all"
@@ -91,6 +106,7 @@ export default function Home() {
           </button>
         </div>
       </nav>
+      )}
 
       {/* 메인 콘텐츠 영역 */}
       <section

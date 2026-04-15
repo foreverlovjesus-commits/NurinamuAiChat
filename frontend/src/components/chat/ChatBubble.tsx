@@ -6,14 +6,18 @@ import rehypeRaw from 'rehype-raw';
 import { ThumbsUp, ThumbsDown, Copy, Check, BookOpen } from 'lucide-react';
 import { ChatMessage } from '@/types/api';
 import { postFeedback } from '@/api/client';
+import ExportButton from './ExportButton';
 
 interface ChatBubbleProps {
   message: ChatMessage;
+  previousMessage?: ChatMessage;
   sessionId: string;
   index: number;
+  appBotName: string;
+  appName: string;
 }
 
-const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sessionId, index }) => {
+const ChatBubble: React.FC<ChatBubbleProps> = ({ message, previousMessage, sessionId, index, appBotName, appName }) => {
   const isAssistant = message.role === 'assistant';
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
@@ -81,7 +85,7 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sessionId, index }) =>
               className="text-[11px] font-bold"
               style={{ color: isAssistant ? 'var(--text-muted)' : 'rgba(255,255,255,0.7)' }}
             >
-              {isAssistant ? '누리나무 법률 AI' : '질문'}
+              {isAssistant ? appBotName : '질문'}
             </span>
           </div>
 
@@ -212,7 +216,7 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sessionId, index }) =>
                     fontFamily: 'var(--font-main)',
                   }}
                 >
-                  {source}
+                  {source.replace(/\.[^/.]+$/, "")}
                 </span>
               ))}
             </div>
@@ -274,6 +278,14 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message, sessionId, index }) =>
             >
               <ThumbsDown size={13} fill={feedback === 'down' ? 'currentColor' : 'none'} />
             </button>
+            
+            <ExportButton 
+              messages={[previousMessage, message].filter(Boolean) as ChatMessage[]} 
+              sessionId={`${sessionId}_msg${index}`} 
+              compact={true} 
+              appName={appName}
+              appBotName={appBotName}
+            />
           </div>
         )}
 

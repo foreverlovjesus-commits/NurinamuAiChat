@@ -2,6 +2,10 @@ import streamlit as st
 import requests
 import json
 import time
+import os
+from dotenv import load_dotenv
+load_dotenv()
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # --- 💡 페이지 기본 설정 ---
 st.set_page_config(page_title="국민권익 지능형 가이드", page_icon="🏛️", layout="wide")
@@ -71,7 +75,7 @@ if prompt := st.chat_input("궁금하신 점이나 겪고 계신 어려움을 �
         start_time = time.time()
 
         try:
-            response = requests.post("http://localhost:8000/ask", json={"question": prompt}, stream=True, timeout=300)
+            response = requests.post(f"{BACKEND_URL}/ask", json={"question": prompt}, stream=True, timeout=300)
 
             for line in response.iter_lines():
                 if line:

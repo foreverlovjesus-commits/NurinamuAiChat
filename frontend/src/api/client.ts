@@ -1,7 +1,7 @@
 // frontend/src/api/client.ts
 import { SSEEvent, AskRequest } from '../types/api';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// .env에서 명시적으로 관리하도록 변경
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 const CHATAPI_KEY = process.env.NEXT_PUBLIC_CHAT_API_KEY || '';
 
 /**
@@ -106,3 +106,33 @@ export async function getSessionUsage(sessionId: string) {
   if (!response.ok) throw new Error('Failed to fetch usage');
   return response.json();
 }
+
+/**
+ * 프론트엔드 UI/UX 제어를 위한 환경 설정 가져오기
+ */
+export async function getUIConfig() {
+  const defaults = {
+    hide_session_list: false,
+    hide_compare_tab: false,
+    hide_usage_stats: false,
+    hide_secure_icon: false,
+    hide_pdf_export: false,
+    hide_share_icon: false,
+    app_name: "누리나무 AI 법률통합지원 시스템",
+    app_bot_name: "누리나무 법률 AI",
+    app_icon: "⚖️",
+    app_logo_path: ""
+  };
+  try {
+    const response = await fetch(`${API_BASE_URL}/config/ui`);
+    if (!response.ok) return defaults;
+    const data = await response.json();
+    if (data.app_logo_path) {
+      data.app_logo_path = `${API_BASE_URL}${data.app_logo_path}`;
+    }
+    return { ...defaults, ...data };
+  } catch (err) {
+    return defaults;
+  }
+}
+

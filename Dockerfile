@@ -22,9 +22,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 런타임 라이브러리만 설치
+# 런타임 라이브러리 설치
+# - libpq5: asyncpg/psycopg2 런타임
+# - libmagic1: python-magic (unstructured 의존) → 없으면 import 실패
+# - poppler-utils: pdf2image/PyMuPDF 대체 경로
+# - tesseract-ocr + 한국어 데이터: OCR 경로 (pdf_parser 폴백)
+# - curl: HEALTHCHECK용
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libmagic1 \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-kor \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,11 +44,20 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 # 소스 코드 복사
 COPY . .
 
-# 로그 디렉토리 권한 설정
-RUN mkdir -p logs && chmod 777 logs
+# 권한 설정: 비루트 사용자(appuser) 생성
+RUN useradd -m -u 1000 appuser
+
+# 로그 디렉토리 생성 및 권한 설정
+RUN mkdir -p logs && chown -R appuser:appuser /app logs
+
+# 앱 사용자 전환
+USER appuser
 
 # 실행 환경 설정 (8000포트)
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
 
 # Gunicorn을 통한 Production 서빙 (워커 수 자동 계산 가이드 반영 가능)
 CMD ["uvicorn", "server.api_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

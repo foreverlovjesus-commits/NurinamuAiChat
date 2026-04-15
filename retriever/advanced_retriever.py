@@ -30,7 +30,7 @@ class AdvancedHybridRetrieverV2:
             self.provider = "local"
         self.router_model = os.getenv("ROUTER_LLM_MODEL", "exaone3.5:2.4b")
 
-        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        ollama_url = os.getenv("OLLAMA_BASE_URL")
         base_url = f"{ollama_url.rstrip('/')}/v1" if self.provider == "local" else None
         api_key = "ollama" if self.provider == "local" else os.getenv("GOOGLE_API_KEY")
 
@@ -47,7 +47,11 @@ class AdvancedHybridRetrieverV2:
         self.active_embedding_model_name = embedding_model
         
         embed_lower = embedding_model.lower()
-        if "google" in embed_lower or "models/" in embed_lower or "embedding-0" in embed_lower:
+        emb_provider = os.getenv("GLOBAL_EMBEDDING_PROVIDER", "").lower()
+        if emb_provider == "vertex":
+            from langchain_google_vertexai import VertexAIEmbeddings
+            self.embeddings = VertexAIEmbeddings(model_name=embedding_model)
+        elif "google" in embed_lower or "models/" in embed_lower or "embedding-0" in embed_lower:
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
             self.embeddings = GoogleGenerativeAIEmbeddings(model=embedding_model, task_type="RETRIEVAL_QUERY")
         elif "openai" in embed_lower or "text-embedding-3" in embed_lower or "text-embedding-ada" in embed_lower:

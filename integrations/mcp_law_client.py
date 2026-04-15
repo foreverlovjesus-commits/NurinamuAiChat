@@ -19,7 +19,7 @@ class McpLawClient:
     """MCP HTTP 클라이언트 — 세션 기반 도구 호출."""
 
     def __init__(self, base_url: str | None = None, api_key: str | None = None):
-        self.base_url = (base_url or os.getenv("MCP_SERVER_URL", "http://localhost:3000")).rstrip("/")
+        self.base_url = (base_url or os.getenv("MCP_SERVER_URL", "")).rstrip("/")
         self.mcp_url = f"{self.base_url}/mcp"
         self.api_key = api_key or os.getenv("LAW_API_KEY", "")
         self.session_id: str | None = None
